@@ -17,7 +17,7 @@ const divisionRoomID = "1475334190034587661"; // روم التقسيمة
 
 const teamRooms = {
   1: "1483219750027919422",
-  2: "1513180587584782446",
+  2: "151318058758478446",
   3: "ROOM_ID_3",
   4: "ROOM_ID_4",
   5: "ROOM_ID_5",
@@ -36,6 +36,7 @@ let numberOfTeams = 0;
 let captains = [];
 let currentCaptainTurn = 0;
 let selections = {};
+let waitingForCaptainMentions = false;
 
 // ===== HELPERS =====
 function canSelect(userID) {
@@ -134,44 +135,35 @@ client.on(Events.MessageCreate, async message => {
     return message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
   }
 
-  const numTeams = parseInt(args[1]);
-  if (!numTeams || numTeams < 2 || numTeams > 6) {
-    return message.reply("عدد الفرق يجب أن يكون بين 2 و 6.");
+  // إذا أرسل منشن الكباتن مباشرة بعد اختيار الفرق
+  if (waitingForCaptainMentions) {
+    const mentions = message.mentions.users;
+    captains = [];
+    selections = {};
+    currentCaptainTurn = 0;
+    let index = 0;
+    mentions.forEach((user) => {
+      captains.push(user.id);
+      selections[user.id] = 0;
+      index++;
+    });
+    waitingForCaptainMentions = false;
+    message.channel.send(`✅ الكباتن تم تسجيلهم بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
+    showDropdownForCaptain(captains[currentCaptainTurn]);
+    return;
   }
-  numberOfTeams = numTeams;
-
-  captains = [];
-  selections = {};
-  currentCaptainTurn = 0;
-
-  for (let i = 2; i < args.length; i++) {
-    const mention = args[i];
-    if (!mention.startsWith('<@')) continue;
-    const id = mention.replace(/\D/g,'');
-    captains.push(id);
-    selections[id] = 0;
-  }
-
-  let captainMessage = `✅ تم تحديد عدد الفرق: ${numberOfTeams}\nتم تحديد الكباتن بالترتيب:\n`;
-  captains.forEach((id,index) => {
-    captainMessage += `${index+1}️⃣ <@${id}>\n`;
-  });
-  message.channel.send(captainMessage);
-
-  // Dropdown للكابتن الأول
-  showDropdownForCaptain(captains[currentCaptainTurn]);
 });
 
 // ===== INTERACTIONS =====
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isStringSelectMenu()) return;
-  if (interaction.customId !== 'select_players' && interaction.customId !== 'select_team_count') return;
-
-  // اختيار عدد الفرق من القائمة
   if (interaction.customId === 'select_team_count') {
     numberOfTeams = parseInt(interaction.values[0]);
-    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن منشن الكباتن بالترتيب بعد !st <عدد الفرق>`, components: [] });
+    waitingForCaptainMentions = true;
+    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن منشن الكباتن بالترتيب (مثال: @Fahad 1 @Khaled 2)`, components: [] });
   }
+
+  if (interaction.customId !== 'select_players') return;
 
   const captainId = interaction.user.id;
 
