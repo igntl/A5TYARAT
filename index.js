@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ActionRowBuilder, StringSelectMenuBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
@@ -8,20 +8,20 @@ const client = new Client({
 
 // ===== CONFIG =====
 const IDs = {
-  adminRole: '1475334752436359320',
-  chat: '1483219896069525665',
-  voiceRoom: '1513180587584782446',
-  captainRoles: ['1490247564086214787', '1495426762971283528'], // الحزام و كابيتانو
+  adminRole: '1475334752436359320',        // رتبة المسؤول
+  voiceRoom: '1513180587584782446',        // روم التقسيمة
+  captainRoles: ['1490247564086214787', '1495426762971283528'], // الحزام / كابيتانو
   captainVoiceRooms: [
-    '1475334190034587661',
-    '1483219750027919422',
-    'ROOM_ID_3',
-    'ROOM_ID_4',
-    'ROOM_ID_5',
-    'ROOM_ID_6'
+    '1475334190034587661', // روم كابتن 1
+    '1483219750027919422', // روم كابتن 2
+    'ROOM_ID_3',           // روم كابتن 3
+    'ROOM_ID_4',           // روم كابتن 4
+    'ROOM_ID_5',           // روم كابتن 5
+    'ROOM_ID_6'            // روم كابتن 6
   ]
 };
 
+// ===== STATE =====
 let state = {
   numTeams: 0,
   captains: [],
@@ -29,17 +29,33 @@ let state = {
   turnIndex: 0
 };
 
-// ===== READY =====
-client.once('ready', () => {
+// ===== REGISTER SLASH COMMAND =====
+client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('startdivision')
+      .setDescription('ابدأ تقسيمة FIFA Pro Club')
+  ].map(cmd => cmd.toJSON());
+
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
+
+  console.log('Slash command /startdivision registered.');
 });
 
-// ===== COMMAND HANDLER =====
-client.on('messageCreate', async (message) => {
-  if (message.channel.id !== IDs.chat) return;
-  if (!message.member.roles.cache.has(IDs.adminRole)) return;
+// ===== HANDLE INTERACTIONS =====
+client.on('interactionCreate', async (interaction) => {
+  // === Slash Command Start Division ===
+  if (interaction.isChatInputCommand() && interaction.commandName === 'startdivision') {
+    if (!interaction.member.roles.cache.has(IDs.adminRole)) {
+      return interaction.reply({ content: 'ليس لديك صلاحية بدء التقسيمة.', ephemeral: true });
+    }
 
-  if (message.content === '!start') {
     state = { numTeams: 0, captains: [], playersPool: [], turnIndex: 0 };
 
     // Dropdown لاختيار عدد الفرق
@@ -53,23 +69,25 @@ client.on('messageCreate', async (message) => {
           { label: '6 فرق', value: '6' }
         ])
     );
-    await message.reply({ content: 'اختر عدد الفرق:', components: [row] });
-  }
-});
 
-// ===== INTERACTIONS =====
-client.on('interactionCreate', async (interaction) => {
+    await interaction.reply({ content: 'اختر عدد الفرق:', components: [row] });
+    return;
+  }
+
+  // === Dropdowns ===
   if (!interaction.isStringSelectMenu()) return;
 
   // اختيار عدد الفرق
   if (interaction.customId === 'select_teams') {
     state.numTeams = parseInt(interaction.values[0]);
+
     // جلب أعضاء روم التقسيمة
     const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
     state.playersPool = vcChannel.members.map(m => m.user.username);
+
     await interaction.update({ content: `تم اختيار ${state.numTeams} فرق.\nاختر ${state.numTeams} كابتن بالترتيب:`, components: [] });
 
-    // Dropdown اختيار الكباتن
+    // Dropdown اختيار الكابتن الأول
     const captainOptions = state.playersPool.map(name => ({ label: name, value: name }));
     const captainRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -79,6 +97,7 @@ client.on('interactionCreate', async (interaction) => {
         .addOptions(captainOptions)
     );
     await interaction.followUp({ content: 'اختر الكابتن الأول:', components: [captainRow] });
+    return;
   }
 
   // اختيار الكباتن
@@ -89,7 +108,6 @@ client.on('interactionCreate', async (interaction) => {
     state.turnIndex = 0;
 
     if (state.captains.length < state.numTeams) {
-      // Dropdown للكابتن التالي
       const nextOptions = state.playersPool.map(name => ({ label: name, value: name }));
       const captainRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -100,13 +118,13 @@ client.on('interactionCreate', async (interaction) => {
       );
       await interaction.update({ content: `تم اختيار كابتن: ${chosen}\nاختر الكابتن التالي:`, components: [captainRow] });
     } else {
-      // كل الكباتن مختارين، نبدأ اختيار اللاعبين
       await interaction.update({ content: `تم اختيار جميع الكباتن: ${state.captains.join(', ')}\nبدء اختيار اللاعبين:`, components: [] });
       startPlayerPick(interaction);
     }
+    return;
   }
 
-  // اختيار اللاعبين لكل كابتن
+  // اختيار اللاعبين
   if (interaction.customId.startsWith('pick_player_')) {
     const captainName = interaction.customId.split('_')[2];
     const selectedPlayer = interaction.values[0];
@@ -130,7 +148,6 @@ client.on('interactionCreate', async (interaction) => {
     if (state.playersPool.length > 0) {
       startPlayerPick(interaction);
     } else {
-      // انتهت التقسيمة
       const endRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('end_division')
@@ -139,21 +156,22 @@ client.on('interactionCreate', async (interaction) => {
       );
       await interaction.update({ content: 'تم اختيار جميع اللاعبين!', components: [endRow] });
     }
+    return;
   }
 
   // إنهاء التقسيمة
   if (interaction.customId === 'end_division') {
     state = { numTeams: 0, captains: [], playersPool: [], turnIndex: 0 };
     await interaction.update({ content: 'تم إعادة تهيئة البوت للتقسيمة القادمة.', components: [] });
+    return;
   }
 });
 
 // ===== FUNCTIONS =====
 async function startPlayerPick(interaction) {
   const currentCaptain = state.captains[state.turnIndex];
-
-  // Dropdown اللاعبين المتاحين
   const options = state.playersPool.map(name => ({ label: name, value: name }));
+
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`pick_player_${currentCaptain}`)
@@ -161,6 +179,7 @@ async function startPlayerPick(interaction) {
       .setMaxValues(1)
       .addOptions(options)
   );
+
   await interaction.followUp({ content: `دور ${currentCaptain} لاختيار لاعب:`, components: [row] });
 }
 
