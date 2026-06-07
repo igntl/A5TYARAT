@@ -1,4 +1,4 @@
-// index.js
+// index.js - النسخة الجديدة بأمر !c للكباتن
 const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -112,16 +112,13 @@ function nextCaptainTurn() {
 // ===== START COMMAND =====
 client.on(Events.MessageCreate, async message => {
   if (message.channel.id !== allowedChannelID) return;
-  if (!message.content.startsWith('!st')) return;
 
   const member = await message.guild.members.fetch(message.author.id);
-  if (!member.roles.cache.has(divisionManagerRoleID)) {
-    return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
-  }
 
-  // إذا لم يكتب عدد الفرق مباشرة، أرسل Dropdown لاختيار الفرق
-  const args = message.content.split(/\s+/);
-  if (!args[1]) {
+  // !st - بداية التقسيمة
+  if (message.content.startsWith('!st')) {
+    if (!member.roles.cache.has(divisionManagerRoleID)) return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
+
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId('select_team_count')
@@ -134,29 +131,28 @@ client.on(Events.MessageCreate, async message => {
     );
     return message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
   }
-});
 
-// ===== CAPTAIN MENTIONS =====
-client.on(Events.MessageCreate, async message => {
-  if (!waitingForCaptainMentions) return;
-  if (message.channel.id !== allowedChannelID) return;
+  // !c - تسجيل الكباتن بعد اختيار عدد الفرق
+  if (message.content.startsWith('!c')) {
+    if (!member.roles.cache.has(divisionManagerRoleID)) return message.reply("❌ ليس لديك صلاحية تسجيل الكباتن.");
+    if (!numberOfTeams) return message.reply("❌ الرجاء اختيار عدد الفرق أولاً باستخدام Dropdown.");
 
-  const mentions = message.mentions.users;
-  if (!mentions.size) return message.reply("❌ الرجاء منشن الكباتن بالترتيب مع الرقم.");
+    // استخراج المنشنات والرقم
+    const args = message.content.split(/\s+/).slice(1); // تجاهل !c
+    captains = [];
+    selections = {};
+    currentCaptainTurn = 0;
 
-  captains = [];
-  selections = {};
-  currentCaptainTurn = 0;
+    for (let i = 0; i < args.length; i += 2) {
+      const userMention = args[i];
+      const userId = userMention.replace(/[<@!>]/g, '');
+      captains.push(userId);
+      selections[userId] = 0;
+    }
 
-  mentions.forEach((user) => {
-    captains.push(user.id);
-    selections[user.id] = 0;
-  });
-
-  waitingForCaptainMentions = false;
-
-  message.channel.send(`✅ الكباتن تم تسجيلهم بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
-  showDropdownForCaptain(captains[currentCaptainTurn]);
+    message.channel.send(`✅ الكباتن تم تسجيلهم بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
+    showDropdownForCaptain(captains[currentCaptainTurn]);
+  }
 });
 
 // ===== INTERACTIONS =====
@@ -165,22 +161,21 @@ client.on(Events.InteractionCreate, async interaction => {
 
   if (interaction.customId === 'select_team_count') {
     numberOfTeams = parseInt(interaction.values[0]);
-    waitingForCaptainMentions = true;
-    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن منشن الكباتن بالترتيب مباشرة (مثال: @Fahad 1 @Khaled 2)`, components: [] });
+    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن استخدم الأمر !c لتسجيل الكباتن بالترتيب (مثال: !c @i39F 1 @Khaled 2)`, components: [] });
   }
 
   if (interaction.customId !== 'select_players') return;
 
   const captainId = interaction.user.id;
 
-  if (!captainId || !canSelect(captainId)) {
+  if (!canSelect(captainId)) {
     return interaction.reply({ content: "الآن ليس دورك، انتظر حتى يأتي دورك.", ephemeral: true });
   }
 
   const selectedValues = interaction.values;
 
   // إنهاء التقسيمة
-  if (selectedValues.includes("🛑 إنهاء التقسيمة") || selectedValues.includes("END_DIVISION")) {
+  if (selectedValues.includes("🛑 إنهاء التقسيمة")) {
     captains = [];
     selections = {};
     currentCaptainTurn = 0;
