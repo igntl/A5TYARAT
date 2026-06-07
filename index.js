@@ -22,6 +22,7 @@ const IDs = {
   ]
 };
 
+// ===== STATE =====
 let state = {
   numTeams: 0,
   captains: [],
@@ -41,7 +42,6 @@ client.once('ready', async () => {
   ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
   await rest.put(
     Routes.applicationGuildCommands(client.user.id, IDs.guildId),
     { body: commands }
@@ -52,7 +52,6 @@ client.once('ready', async () => {
 
 // ===== HANDLE INTERACTIONS =====
 client.on('interactionCreate', async (interaction) => {
-  // === Slash Command Start Division ===
   if (interaction.isChatInputCommand() && interaction.commandName === 'startdivision') {
     if (!interaction.member.roles.cache.has(IDs.adminRole)) {
       return interaction.reply({ content: 'ليس لديك صلاحية بدء التقسيمة.', ephemeral: true });
@@ -76,30 +75,30 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // === Dropdowns ===
   if (!interaction.isStringSelectMenu()) return;
 
-  // باقي الكود كما في النسخة السابقة: اختيار الفرق، الكباتن، اللاعبين، النقل التلقائي، إنهاء التقسيمة
-
+  // اختيار عدد الفرق
   if (interaction.customId === 'select_teams') {
     state.numTeams = parseInt(interaction.values[0]);
     const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
-    state.playersPool = vcChannel.members.map(m => m.user.username);
 
-    await interaction.update({ content: `تم اختيار ${state.numTeams} فرق.\nاختر ${state.numTeams} كابتن بالترتيب:`, components: [] });
+    // استخدام Nickname وليس username
+    state.playersPool = vcChannel.members.map(m => m.nickname || m.user.username);
 
     const captainOptions = state.playersPool.map(name => ({ label: name, value: name }));
-    const captainRow = new ActionRowBuilder().addComponents(
+    const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId('select_captains')
-        .setPlaceholder('اختر الكابتن الأول')
+        .setPlaceholder(`اختر الكابتن 1 من ${state.playersPool.length} لاعبين`)
         .setMaxValues(1)
         .addOptions(captainOptions)
     );
-    await interaction.followUp({ content: 'اختر الكابتن الأول:', components: [captainRow] });
+
+    await interaction.update({ content: `تم اختيار ${state.numTeams} فرق.\nاختر الكباتن بالترتيب:`, components: [row] });
     return;
   }
 
+  // اختيار الكباتن
   if (interaction.customId === 'select_captains') {
     const chosen = interaction.values[0];
     state.captains.push(chosen);
@@ -108,28 +107,29 @@ client.on('interactionCreate', async (interaction) => {
 
     if (state.captains.length < state.numTeams) {
       const nextOptions = state.playersPool.map(name => ({ label: name, value: name }));
-      const captainRow = new ActionRowBuilder().addComponents(
+      const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('select_captains')
           .setPlaceholder(`اختر الكابتن ${state.captains.length + 1}`)
           .setMaxValues(1)
           .addOptions(nextOptions)
       );
-      await interaction.update({ content: `تم اختيار كابتن: ${chosen}\nاختر الكابتن التالي:`, components: [captainRow] });
+      await interaction.update({ content: `اختر الكابتن التالي:`, components: [row] });
     } else {
-      await interaction.update({ content: `تم اختيار جميع الكباتن: ${state.captains.join(', ')}\nبدء اختيار اللاعبين:`, components: [] });
+      await interaction.update({ content: `تم اختيار جميع الكباتن: ${state.captains.join(', ')}\nابدأ اختيار اللاعبين:`, components: [] });
       startPlayerPick(interaction);
     }
     return;
   }
 
+  // اختيار اللاعبين
   if (interaction.customId.startsWith('pick_player_')) {
     const captainName = interaction.customId.split('_')[2];
     const selectedPlayer = interaction.values[0];
 
     const captainIndex = state.captains.indexOf(captainName);
     const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
-    const member = vcChannel.members.find(m => m.user.username === selectedPlayer);
+    const member = vcChannel.members.find(m => (m.nickname || m.user.username) === selectedPlayer);
     if (member) {
       const targetRoomId = IDs.captainVoiceRooms[captainIndex];
       const targetRoom = await interaction.guild.channels.fetch(targetRoomId);
@@ -153,6 +153,7 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
+  // إنهاء التقسيمة
   if (interaction.customId === 'end_division') {
     state = { numTeams: 0, captains: [], playersPool: [], turnIndex: 0 };
     await interaction.update({ content: 'تم إعادة تهيئة البوت للتقسيمة القادمة.', components: [] });
