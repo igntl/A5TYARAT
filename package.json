@@ -1,15 +1,16 @@
 {
-  "name": "fifa-proclub-division-bot",
+  "name": "fifa-proclub-bot",
   "version": "1.0.0",
-  "description": "بوت لتقسيم فرق FIFA Pro Clubs تلقائي على Discord",
+  "description": "بوت تقسيم لاعبين FIFA Pro Club إلى فرق صوتية تفاعلية",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "author": "Your Name",
-  "license": "MIT",
   "dependencies": {
     "discord.js": "^14.15.0",
     "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
