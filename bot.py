@@ -10,12 +10,12 @@ ROLE_HEZAM_ID = 1490247564086214787         # رتبة الحزام
 ROLE_CAPITANO_ID = 1495426762971283528      # رتبة كابيتانو
 
 TEXT_CHANNEL_ID = 1483219896069525665       # شات البوت الكتابي المسموح به
-LOBBY_VOICE_ID = 1475334190034587661        # روم التقسيمة الصوتي (التجمع الجديد)
+LOBBY_VOICE_ID = 1475334190034587661        # روم التقسيمة الصوتي (التجمع)
 
-# رومات الكباتن بالترتيب الدقيق من 1 إلى 6 (تم تحديث روماتك بالأسفل)
+# رومات الكباتن بالترتيب الدقيق من 1 إلى 6
 TEAM_CHANNELS = [
-    1483219750027919422,  # روم الكابتن الأول الجديد
-    1513180587584782446,  # روم الكابتن الثاني الجديد
+    1483219750027919422,  # روم الكابتن الأول
+    1513180587584782446,  # روم الكابتن الثاني
     0,                    # روم الكابتن 3 (استبدل الـ 0 بالآيدي عند الحاجة)
     0,                    # روم الكابتن 4 (استبدل الـ 0 بالآيدي عند الحاجة)
     0,                    # روم الكابتن 5 (استبدل الـ 0 بالآيدي عند الحاجة)
@@ -38,7 +38,7 @@ class ProClubBot(commands.Bot):
 bot = ProClubBot()
 session = {} # ذاكرة الجلسة الحالية للتقسيمة
 
-# --- دالة مساعدة لتقسيم القوائم إلى صفحات (بسبب حد ديسكورد 25 خيار) ---
+# --- دالة مساعدة لتقسيم القوائم إلى صفحات ---
 def get_page_options(members_list, page=0, per_page=23):
     start = page * per_page
     end = start + per_page
@@ -52,7 +52,7 @@ def get_page_options(members_list, page=0, per_page=23):
         options.append(discord.SelectOption(label="➡️ الصفحة التالية", value="next_page"))
         
     if not options:
-        options.append(discord.SelectOption(label="لا يوجد لاعبين متاحين بروم التجمع", value="none"))
+        options.append(discord.SelectOption(label="لا يوجد لاعبين متاحين حالياً", value="none"))
     return options
 
 # --- واجهة اختيار اللاعبين للكباتن (The Draft) ---
@@ -140,13 +140,16 @@ class ResetView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ResetSelect())
 
-# --- محرك إدارة جولات التقسيم الذكي الصارم بالتناوب ---
+# --- محرك إدارة جولات التقسيم المباشر والسريع ---
 async def run_draft_engine(interaction: discord.Interaction):
     guild = interaction.guild
     channel = interaction.channel
 
+    # انتظر ثانية واحدة للتأكد من استقرار إرسال رسالة البداية
+    await asyncio.sleep(1)
+
     while session["players_pool"]:
-        # تحديث مستمر لمنع المشاكل وفلترة الخارجين من روم الصوت
+        # تحديث قائمة المتواجدين في الروم الصوتي باستمرار لمنع الأخطاء
         lobby_channel = guild.get_channel(LOBBY_VOICE_ID)
         current_lobby_ids = [m.id for m in lobby_channel.members] if lobby_channel else []
         session["players_pool"] = [p for p in session["players_pool"] if p in current_lobby_ids]
@@ -165,9 +168,8 @@ async def run_draft_engine(interaction: discord.Interaction):
                 session["round_number"] += 1
             continue
 
-        # حساب الحصص والميزات الخاصة بالرتب (الحزام أو كابيتانو)
+        # حساب ميزات الرتب الخاصة (الحزام أو كابيتانو)
         has_special_role = any(r.id in [ROLE_HEZAM_ID, ROLE_CAPITANO_ID] for r in captain_member.roles)
-        
         if has_special_role:
             if session["round_number"] == 1:
                 max_pick = 3
@@ -176,12 +178,16 @@ async def run_draft_engine(interaction: discord.Interaction):
             else:
                 max_pick = 2
         else:
-            max_pick = 1 # الكابتن العادي يختار لاعب واحد فقط في كل دور دائماً
+            max_pick = 1
 
         session["event"] = asyncio.Event()
         
-        # جلب قائمة الأعضاء المتاحين حالياً (باستثناء الكباتن)
-        available_members = [guild.get_member(p_id) for p_id in session["players_pool"] if guild.get_member(p_id) is not None]
+        # جلب الكائنات البرمجية للاعبين المتاحين حالياً
+        available_members = []
+        for p_id in session["players_pool"]:
+            m = guild.get_member(p_id)
+            if m:
+                available_members.append(m)
 
         if not available_members:
             break
@@ -196,9 +202,9 @@ async def run_draft_engine(interaction: discord.Interaction):
             color=discord.Color.blue()
         )
         
-        draft_msg = await channel.send(embed=embed, view=view)
+        draft_msg = await channel.send(content=captain_member.mention, embed=embed, view=view)
 
-        # تايمر الـ 30 ثانية الصارم لضمان السرعة ومنع التأخير
+        # تايمر الـ 30 ثانية
         try:
             await asyncio.wait_for(session["event"].wait(), timeout=30.0)
         except asyncio.TimeoutError:
@@ -220,7 +226,6 @@ async def run_draft_engine(interaction: discord.Interaction):
                                     pass
                 await channel.send(f"⏱️ **انتهى الوقت!** قام البوت بسحب لاعبين عشوائيين لفريق الكابتن {captain_member.mention}.")
             
-            # الانتقال التلقائي للكابتن القادم
             session["current_captain_index"] += 1
             if session["current_captain_index"] >= len(session["captains"]):
                 session["current_captain_index"] = 0
@@ -231,7 +236,7 @@ async def run_draft_engine(interaction: discord.Interaction):
         except:
             pass
 
-    # انتهاء كل اللاعبين وظهور زر إعادة التهيئة للمسؤول
+    # عند انتهاء اللاعبين بالكامل
     embed_end = discord.Embed(
         title="🎉 تم توزيع جميع اللاعبين بنجاح!",
         description="انتهت عملية التقسيم بالكامل، يتوجب على المسؤول الآن الضغط بالأسفل لإعادة تهيئة البوت.",
@@ -239,8 +244,8 @@ async def run_draft_engine(interaction: discord.Interaction):
     )
     await channel.send(embed=embed_end, view=ResetView())
 
-# --- الأمر المائل الأساسي المبسط والمباشر ---
-@bot.tree.command(name="تقسيم", description="بدء جولات اختيار وتقسيم اللاعبين بالترتيب")
+# --- الأمر المائل الأساسي السريع ---
+@bot.tree.command(name="تقسيم", description="بدء جولات اختيار وتقسيم لاعبي البرو كلوب بالترتيب")
 @app_commands.describe(
     عدد_الفرق="اختر عدد الفرق المشاركة (2 أو 4 أو 6)",
     كابتن_1="الكابتن الأول لروم 1",
@@ -260,7 +265,7 @@ async def تقسيم(
     كابتن_5: discord.Member = None,
     كابتن_6: discord.Member = None
 ):
-    # 1. التحقق من رتبة المسؤول عن التقسيمة
+    # 1. التحقق من رتبة المسؤول
     if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
         await interaction.response.send_message("❌ عذراً، هذا الأمر مخصص فقط لمن يحمل رتبة المسؤول عن التقسيمة!", ephemeral=True)
         return
@@ -270,14 +275,14 @@ async def تقسيم(
         await interaction.response.send_message(f"❌ هذا الأمر يعمل فقط داخل شات البوت المخصص: <#{TEXT_CHANNEL_ID}>", ephemeral=True)
         return
 
-    # 3. التحقق من مدخلات عدد الفرق
+    # 3. التحقق من عدد الفرق
     if عدد_الفرق not in [2, 4, 6]:
         await interaction.response.send_message("❌ الرجاء اختيار عدد فرق صحيح (2 أو 4 أو 6 فقط).", ephemeral=True)
         return
 
     await interaction.response.defer()
 
-    # 4. ترتيب الكباتن المدخلين بدقة بالتوالي
+    # 4. تجميع الكباتن المدخلين
     all_caps = [كابتن_1, كابتن_2, كابتن_3, كابتن_4, كابتن_5, كابتن_6]
     captains_list = [c.id for c in all_caps[:عدد_الفرق] if c is not None]
 
@@ -285,22 +290,18 @@ async def تقسيم(
         await interaction.followup.send(f"❌ خطأ: قمت بتحديد {عدد_الفرق} فرق ولكن لم تدخل كباتن كافيين بالترتيب.", ephemeral=True)
         return
 
-    # 5. جلب اللاعبين المتواجدين حالياً بروم التجمع
+    # 5. جلب الأعضاء المتواجدين بالروم الصوتي
     guild = interaction.guild
     lobby_channel = guild.get_channel(LOBBY_VOICE_ID)
     
     if not lobby_channel or not lobby_channel.members:
-        await interaction.followup.send("❌ روم التقسيمة الصوتي فارغ حالياً!", ephemeral=True)
+        await interaction.followup.send("❌ روم التقسيمة الصوتي فارغ حالياً أو لم يتم العثور عليه!", ephemeral=True)
         return
 
-    # فرز وتجهيز قائمة اللاعبين المتاحين (المتواجدين بالروم باستثناء الكباتن)
+    # فرز وتجهيز قائمة اللاعبين المتاحين (باستثناء الكباتن)
     players_pool = [m.id for m in lobby_channel.members if m.id not in captains_list]
 
-    if not players_pool:
-        await interaction.followup.send("❌ لا يوجد لاعبين متاحين للتقسيم بروم التجمع غير الكباتن!", ephemeral=True)
-        return
-
-    # بدء الجلسة فوراً
+    # بدء الجلسة
     session.clear()
     session.update({
         "guild": guild,
@@ -313,13 +314,12 @@ async def تقسيم(
 
     await interaction.followup.send(f"🎬 **بدأت جولات التقسيم الفورية بالتناوب لـ {عدد_الفرق} فرق!**")
     
-    # تشغيل محرك الدرفت التلقائي فوراً بالتناوب
+    # تشغيل محرك الدرفت المباشر فوراً
     bot.loop.create_task(run_draft_engine(interaction))
 
-
-# تشغيل البوت الآمن المتوافق مع Railway
+# تشغيل البوت
 token = os.getenv("DISCORD_TOKEN")
 if token:
     bot.run(token)
 else:
-    print("Error: DISCORD_TOKEN variable not found in Railway Settings.")
+    print("Error: DISCORD_TOKEN variable not found.")
