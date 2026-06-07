@@ -29,6 +29,9 @@ const specialRanks = {
   belt: "1490247564086214787"
 };
 
+// ===== ROLE =====
+const divisionManagerRoleID = "ID_رتبة_المسؤول_هنا"; // ضع هنا ID رتبة المسؤول
+
 // ===== STATE =====
 let numberOfTeams = 0;
 let captains = [];
@@ -111,6 +114,13 @@ client.on(Events.MessageCreate, async message => {
   if (message.channel.id !== allowedChannelID) return;
   if (!message.content.startsWith('!st')) return;
 
+  // تحقق أن المستخدم عنده رول المسؤول
+  const member = await message.guild.members.fetch(message.author.id);
+  if (!member.roles.cache.has(divisionManagerRoleID)) {
+    return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
+  }
+
+  // اختر عدد الفرق + الكباتن
   const args = message.content.split(/\s+/);
   const numTeams = parseInt(args[1]);
   if (!numTeams || numTeams < 2 || numTeams > 6) {
@@ -153,6 +163,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
   const selectedValues = interaction.values;
 
+  // إنهاء التقسيمة
   if (selectedValues.includes("🛑 إنهاء التقسيمة") || selectedValues.includes("END_DIVISION")) {
     captains = [];
     selections = {};
@@ -160,6 +171,7 @@ client.on(Events.InteractionCreate, async interaction => {
     return interaction.reply({ content: "🛑 تم إنهاء التقسيمة! يمكنك البدء من جديد.", ephemeral: true });
   }
 
+  // انتهاء الدور للكابتن الحالي
   if (selectedValues.includes("✅ انتهيت من اختياراتي")) {
     nextCaptainTurn();
     return interaction.reply({ content: "✅ انتهى دورك، تم إعطاء الدور للكابتن التالي.", ephemeral: true });
