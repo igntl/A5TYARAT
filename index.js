@@ -1,204 +1,168 @@
-const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
+const { Client, GatewayIntentBits, Partials, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
+  partials: [Partials.Channel]
 });
 
 // ===== CONFIG =====
-const allowedChannelID = "1483219896069525665"; // شات البوت
-const divisionRoomID = "1475334190034587661"; // روم التقسيمة
-
-const teamRooms = {
-  1: "1483219750027919422",
-  2: "1513180587584782446",
-  3: "ROOM_ID_3",
-  4: "ROOM_ID_4",
-  5: "ROOM_ID_5",
-  6: "ROOM_ID_6"
+const IDs = {
+  adminRole: '1475334752436359320',
+  chat: '1483219896069525665',
+  voiceRoom: '1513180587584782446',
+  captainRoles: ['1490247564086214787', '1495426762971283528'], // الحزام و كابيتانو
+  captainVoiceRooms: [
+    '1475334190034587661',
+    '1483219750027919422',
+    'ROOM_ID_3',
+    'ROOM_ID_4',
+    'ROOM_ID_5',
+    'ROOM_ID_6'
+  ]
 };
 
-const divisionManagerRoleID = "1475334752436359320"; // رول مسؤول التقسيمة
-const specialRanks = {
-  capitan: "1495426762971283528",
-  belt: "1490247564086214787"
+let state = {
+  numTeams: 0,
+  captains: [],
+  playersPool: [],
+  turnIndex: 0
 };
 
-// ===== STATE =====
-let numberOfTeams = 0;
-let captains = [];
-let currentCaptainTurn = 0;
-let selections = {};
-let remainingPlayers = [];
-let captainSelectionPhase = false;
+// ===== READY =====
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
 
-// ===== HELPERS =====
-async function getPlayersInDivision(guild) {
-  const channel = guild.channels.cache.get(divisionRoomID);
-  if (!channel) return [];
-  return channel.members ? Array.from(channel.members.values()) : [];
-}
+// ===== COMMAND HANDLER =====
+client.on('messageCreate', async (message) => {
+  if (message.channel.id !== IDs.chat) return;
+  if (!message.member.roles.cache.has(IDs.adminRole)) return;
 
-function canSelect(userID) {
-  return userID === captains[currentCaptainTurn];
-}
+  if (message.content === '!start') {
+    state = { numTeams: 0, captains: [], playersPool: [], turnIndex: 0 };
 
-function getMaxSelectableForCaptain(captainId) {
-  const member = client.guilds.cache.first().members.cache.get(captainId);
-  if (!member) return 2;
-  if (member.roles.cache.has(specialRanks.capitan) || member.roles.cache.has(specialRanks.belt)) {
-    if (!selections[captainId]) return 3;
-    if (selections[captainId] === 3) return 1;
-    return 2;
+    // Dropdown لاختيار عدد الفرق
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('select_teams')
+        .setPlaceholder('اختر عدد الفرق')
+        .addOptions([
+          { label: '2 فرق', value: '2' },
+          { label: '4 فرق', value: '4' },
+          { label: '6 فرق', value: '6' }
+        ])
+    );
+    await message.reply({ content: 'اختر عدد الفرق:', components: [row] });
   }
-  return 2;
-}
-
-// ===== SHOW DROPDOWN FOR CAPTAINS =====
-async function showDropdownForCaptain(captainId) {
-  const channel = client.channels.cache.get(allowedChannelID);
-
-  if (remainingPlayers.length === 0) {
-    channel.send("⚠️ لا يوجد لاعبين متبقين للاختيار.");
-    return;
-  }
-
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('select_players')
-      .setPlaceholder('اختر لاعبيك أو إنهاء الدور/التقسيمة')
-      .addOptions([
-        ...remainingPlayers.map(p => ({
-          label: p.nickname || p.user.username,
-          value: p.id
-        })),
-        { label: "✅ انتهيت من اختياراتي", description: "اعط الدور للكابتن التالي" },
-        { label: "🛑 إنهاء التقسيمة", description: "انتهت كل الاختيارات" }
-      ])
-      .setMinValues(1)
-      .setMaxValues(getMaxSelectableForCaptain(captainId))
-  );
-
-  channel.send({ content: `<@${captainId}> الدور عليك! اختر لاعبيك:`, components: [row] });
-}
-
-function nextCaptainTurn() {
-  currentCaptainTurn++;
-  const channel = client.channels.cache.get(allowedChannelID);
-  if (currentCaptainTurn >= captains.length) {
-    channel.send("✅ اكتملت كل الاختيارات! جميع اللاعبين تم توزيعهم.");
-    currentCaptainTurn = -1;
-  } else {
-    showDropdownForCaptain(captains[currentCaptainTurn]);
-  }
-}
-
-// ===== START COMMAND =====
-client.on(Events.MessageCreate, async message => {
-  if (message.channel.id !== allowedChannelID) return;
-  if (!message.content.startsWith('!st')) return;
-
-  const member = await message.guild.members.fetch(message.author.id);
-  if (!member.roles.cache.has(divisionManagerRoleID)) {
-    return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
-  }
-
-  // Dropdown لاختيار عدد الفرق
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('select_team_count')
-      .setPlaceholder('اختر عدد الفرق')
-      .addOptions([
-        { label: '2 فرق', value: '2' },
-        { label: '4 فرق', value: '4' },
-        { label: '6 فرق', value: '6' }
-      ])
-  );
-  message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
 });
 
 // ===== INTERACTIONS =====
-client.on(Events.InteractionCreate, async interaction => {
+client.on('interactionCreate', async (interaction) => {
   if (!interaction.isStringSelectMenu()) return;
 
   // اختيار عدد الفرق
-  if (interaction.customId === 'select_team_count') {
-    numberOfTeams = parseInt(interaction.values[0]);
-    const allMembers = await getPlayersInDivision(interaction.guild);
-    remainingPlayers = allMembers;
-    captainSelectionPhase = true;
+  if (interaction.customId === 'select_teams') {
+    state.numTeams = parseInt(interaction.values[0]);
+    // جلب أعضاء روم التقسيمة
+    const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
+    state.playersPool = vcChannel.members.map(m => m.user.username);
+    await interaction.update({ content: `تم اختيار ${state.numTeams} فرق.\nاختر ${state.numTeams} كابتن بالترتيب:`, components: [] });
 
-    return interaction.update({ 
-      content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن اختر ${numberOfTeams} كباتن من القائمة التالية بالترتيب:`,
-      components: [new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('select_captains')
-          .setPlaceholder('اختر الكباتن بالترتيب')
-          .addOptions(allMembers.map(p => ({
-            label: p.nickname || p.user.username,
-            value: p.id
-          })))
-          .setMinValues(numberOfTeams)
-          .setMaxValues(numberOfTeams)
-      )]
-    });
+    // Dropdown اختيار الكباتن
+    const captainOptions = state.playersPool.map(name => ({ label: name, value: name }));
+    const captainRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('select_captains')
+        .setPlaceholder('اختر الكابتن الأول')
+        .setMaxValues(1)
+        .addOptions(captainOptions)
+    );
+    await interaction.followUp({ content: 'اختر الكابتن الأول:', components: [captainRow] });
   }
 
   // اختيار الكباتن
-  if (interaction.customId === 'select_captains' && captainSelectionPhase) {
-    captains = interaction.values;
-    selections = {};
-    currentCaptainTurn = 0;
-    remainingPlayers = remainingPlayers.filter(p => !captains.includes(p.id));
-    captainSelectionPhase = false;
+  if (interaction.customId === 'select_captains') {
+    const chosen = interaction.values[0];
+    state.captains.push(chosen);
+    state.playersPool = state.playersPool.filter(p => p !== chosen);
+    state.turnIndex = 0;
 
-    await interaction.update({ content: `✅ تم تسجيل الكباتن بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`, components: [] });
-    
-    // بدء الدور للكابتن الأول مباشرة
-    showDropdownForCaptain(captains[currentCaptainTurn]);
-    return;
+    if (state.captains.length < state.numTeams) {
+      // Dropdown للكابتن التالي
+      const nextOptions = state.playersPool.map(name => ({ label: name, value: name }));
+      const captainRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('select_captains')
+          .setPlaceholder(`اختر الكابتن ${state.captains.length + 1}`)
+          .setMaxValues(1)
+          .addOptions(nextOptions)
+      );
+      await interaction.update({ content: `تم اختيار كابتن: ${chosen}\nاختر الكابتن التالي:`, components: [captainRow] });
+    } else {
+      // كل الكباتن مختارين، نبدأ اختيار اللاعبين
+      await interaction.update({ content: `تم اختيار جميع الكباتن: ${state.captains.join(', ')}\nبدء اختيار اللاعبين:`, components: [] });
+      startPlayerPick(interaction);
+    }
   }
 
   // اختيار اللاعبين لكل كابتن
-  if (interaction.customId === 'select_players') {
-    const captainId = interaction.user.id;
-    if (!canSelect(captainId)) return interaction.reply({ content: "الآن ليس دورك.", ephemeral: true });
+  if (interaction.customId.startsWith('pick_player_')) {
+    const captainName = interaction.customId.split('_')[2];
+    const selectedPlayer = interaction.values[0];
 
-    const selectedValues = interaction.values;
-
-    if (selectedValues.includes("🛑 إنهاء التقسيمة")) {
-      captains = [];
-      selections = {};
-      currentCaptainTurn = 0;
-      remainingPlayers = [];
-      return interaction.reply({ content: "🛑 تم إنهاء التقسيمة! يمكنك البدء من جديد.", ephemeral: true });
+    // نقل اللاعب تلقائيًا لروم الكابتن
+    const captainIndex = state.captains.indexOf(captainName);
+    const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
+    const member = vcChannel.members.find(m => m.user.username === selectedPlayer);
+    if (member) {
+      const targetRoomId = IDs.captainVoiceRooms[captainIndex];
+      const targetRoom = await interaction.guild.channels.fetch(targetRoomId);
+      await member.voice.setChannel(targetRoom);
     }
 
-    if (selectedValues.includes("✅ انتهيت من اختياراتي")) {
-      nextCaptainTurn();
-      return interaction.reply({ content: "✅ انتهى دورك، تم إعطاء الدور للكابتن التالي.", ephemeral: true });
-    }
+    // إزالة اللاعب من الباقي
+    state.playersPool = state.playersPool.filter(p => p !== selectedPlayer);
 
-    // نقل اللاعبين المحددين
-    const roomID = teamRooms[currentCaptainTurn + 1];
-    for (const playerId of selectedValues) {
-      const member = await interaction.guild.members.fetch(playerId);
-      if (member.voice.channel) await member.voice.setChannel(roomID);
-      remainingPlayers = remainingPlayers.filter(p => p.id !== playerId);
-    }
+    // تحديث الدور للكابتن التالي
+    state.turnIndex = (state.turnIndex + 1) % state.captains.length;
 
-    selections[captainId] = (selections[captainId] || 0) + selectedValues.length;
-    await interaction.reply({ content: "✅ تم نقل اللاعبين!", ephemeral: true });
-
-    if (selections[captainId] >= getMaxSelectableForCaptain(captainId)) {
-      nextCaptainTurn();
+    if (state.playersPool.length > 0) {
+      startPlayerPick(interaction);
+    } else {
+      // انتهت التقسيمة
+      const endRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('end_division')
+          .setPlaceholder('إنهاء التقسيمة')
+          .addOptions([{ label: 'إنهاء التقسيمة', value: 'end' }])
+      );
+      await interaction.update({ content: 'تم اختيار جميع اللاعبين!', components: [endRow] });
     }
+  }
+
+  // إنهاء التقسيمة
+  if (interaction.customId === 'end_division') {
+    state = { numTeams: 0, captains: [], playersPool: [], turnIndex: 0 };
+    await interaction.update({ content: 'تم إعادة تهيئة البوت للتقسيمة القادمة.', components: [] });
   }
 });
 
+// ===== FUNCTIONS =====
+async function startPlayerPick(interaction) {
+  const currentCaptain = state.captains[state.turnIndex];
+
+  // Dropdown اللاعبين المتاحين
+  const options = state.playersPool.map(name => ({ label: name, value: name }));
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`pick_player_${currentCaptain}`)
+      .setPlaceholder(`دور ${currentCaptain} لاختيار لاعب`)
+      .setMaxValues(1)
+      .addOptions(options)
+  );
+  await interaction.followUp({ content: `دور ${currentCaptain} لاختيار لاعب:`, components: [row] });
+}
+
+// ===== LOGIN =====
 client.login(process.env.DISCORD_TOKEN);
