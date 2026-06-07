@@ -8,20 +8,20 @@ const client = new Client({
 
 // ===== CONFIG =====
 const IDs = {
-  adminRole: '1475334752436359320',        // رتبة المسؤول
-  voiceRoom: '1513180587584782446',        // روم التقسيمة
+  guildId: 'ضع_ID_السيرفر_هنا',        // ID السيرفر
+  adminRole: '1475334752436359320',     // رتبة المسؤول
+  voiceRoom: '1513180587584782446',     // روم التقسيمة
   captainRoles: ['1490247564086214787', '1495426762971283528'], // الحزام / كابيتانو
   captainVoiceRooms: [
     '1475334190034587661', // روم كابتن 1
     '1483219750027919422', // روم كابتن 2
-    'ROOM_ID_3',           // روم كابتن 3
-    'ROOM_ID_4',           // روم كابتن 4
-    'ROOM_ID_5',           // روم كابتن 5
-    'ROOM_ID_6'            // روم كابتن 6
+    'ROOM_ID_3',
+    'ROOM_ID_4',
+    'ROOM_ID_5',
+    'ROOM_ID_6'
   ]
 };
 
-// ===== STATE =====
 let state = {
   numTeams: 0,
   captains: [],
@@ -29,7 +29,7 @@ let state = {
   turnIndex: 0
 };
 
-// ===== REGISTER SLASH COMMAND =====
+// ===== REGISTER GUILD SLASH COMMAND =====
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
@@ -37,15 +37,17 @@ client.once('ready', async () => {
     new SlashCommandBuilder()
       .setName('startdivision')
       .setDescription('ابدأ تقسيمة FIFA Pro Club')
-  ].map(cmd => cmd.toJSON());
+      .toJSON()
+  ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
   await rest.put(
-    Routes.applicationCommands(client.user.id),
+    Routes.applicationGuildCommands(client.user.id, IDs.guildId),
     { body: commands }
   );
 
-  console.log('Slash command /startdivision registered.');
+  console.log('Slash command /startdivision registered for this guild.');
 });
 
 // ===== HANDLE INTERACTIONS =====
@@ -77,17 +79,15 @@ client.on('interactionCreate', async (interaction) => {
   // === Dropdowns ===
   if (!interaction.isStringSelectMenu()) return;
 
-  // اختيار عدد الفرق
+  // باقي الكود كما في النسخة السابقة: اختيار الفرق، الكباتن، اللاعبين، النقل التلقائي، إنهاء التقسيمة
+
   if (interaction.customId === 'select_teams') {
     state.numTeams = parseInt(interaction.values[0]);
-
-    // جلب أعضاء روم التقسيمة
     const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
     state.playersPool = vcChannel.members.map(m => m.user.username);
 
     await interaction.update({ content: `تم اختيار ${state.numTeams} فرق.\nاختر ${state.numTeams} كابتن بالترتيب:`, components: [] });
 
-    // Dropdown اختيار الكابتن الأول
     const captainOptions = state.playersPool.map(name => ({ label: name, value: name }));
     const captainRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -100,7 +100,6 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // اختيار الكباتن
   if (interaction.customId === 'select_captains') {
     const chosen = interaction.values[0];
     state.captains.push(chosen);
@@ -124,12 +123,10 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // اختيار اللاعبين
   if (interaction.customId.startsWith('pick_player_')) {
     const captainName = interaction.customId.split('_')[2];
     const selectedPlayer = interaction.values[0];
 
-    // نقل اللاعب تلقائيًا لروم الكابتن
     const captainIndex = state.captains.indexOf(captainName);
     const vcChannel = await interaction.guild.channels.fetch(IDs.voiceRoom);
     const member = vcChannel.members.find(m => m.user.username === selectedPlayer);
@@ -139,10 +136,7 @@ client.on('interactionCreate', async (interaction) => {
       await member.voice.setChannel(targetRoom);
     }
 
-    // إزالة اللاعب من الباقي
     state.playersPool = state.playersPool.filter(p => p !== selectedPlayer);
-
-    // تحديث الدور للكابتن التالي
     state.turnIndex = (state.turnIndex + 1) % state.captains.length;
 
     if (state.playersPool.length > 0) {
@@ -159,7 +153,6 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // إنهاء التقسيمة
   if (interaction.customId === 'end_division') {
     state = { numTeams: 0, captains: [], playersPool: [], turnIndex: 0 };
     await interaction.update({ content: 'تم إعادة تهيئة البوت للتقسيمة القادمة.', components: [] });
