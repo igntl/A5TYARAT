@@ -29,8 +29,7 @@ const specialRanks = {
   belt: "1490247564086214787"
 };
 
-// ===== ROLE =====
-const divisionManagerRoleID = "1475334752436359320"; // ID الرول الصحيح
+const divisionManagerRoleID = "1475334752436359320"; // رول مسؤول التقسيمة
 
 // ===== STATE =====
 let numberOfTeams = 0;
@@ -114,14 +113,27 @@ client.on(Events.MessageCreate, async message => {
   if (message.channel.id !== allowedChannelID) return;
   if (!message.content.startsWith('!st')) return;
 
-  // تحقق أن المستخدم عنده رول المسؤول
   const member = await message.guild.members.fetch(message.author.id);
   if (!member.roles.cache.has(divisionManagerRoleID)) {
     return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
   }
 
-  // اختر عدد الفرق + الكباتن
+  // إذا لم يكتب عدد الفرق مباشرة، أرسل Dropdown لاختيار الفرق
   const args = message.content.split(/\s+/);
+  if (!args[1]) {
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('select_team_count')
+        .setPlaceholder('اختر عدد الفرق')
+        .addOptions([
+          { label: '2 فرق', value: '2' },
+          { label: '4 فرق', value: '4' },
+          { label: '6 فرق', value: '6' }
+        ])
+    );
+    return message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
+  }
+
   const numTeams = parseInt(args[1]);
   if (!numTeams || numTeams < 2 || numTeams > 6) {
     return message.reply("عدد الفرق يجب أن يكون بين 2 و 6.");
@@ -153,7 +165,13 @@ client.on(Events.MessageCreate, async message => {
 // ===== INTERACTIONS =====
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isStringSelectMenu()) return;
-  if (interaction.customId !== 'select_players') return;
+  if (interaction.customId !== 'select_players' && interaction.customId !== 'select_team_count') return;
+
+  // اختيار عدد الفرق من القائمة
+  if (interaction.customId === 'select_team_count') {
+    numberOfTeams = parseInt(interaction.values[0]);
+    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن منشن الكباتن بالترتيب بعد !st <عدد الفرق>`, components: [] });
+  }
 
   const captainId = interaction.user.id;
 
