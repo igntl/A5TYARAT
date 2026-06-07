@@ -1,4 +1,4 @@
-// index.js - النسخة الجديدة بأمر !c للكباتن
+// index.js - النسخة النهائية العملية
 const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -36,7 +36,7 @@ let numberOfTeams = 0;
 let captains = [];
 let currentCaptainTurn = 0;
 let selections = {};
-let waitingForCaptainMentions = false;
+let remainingPlayers = [];
 
 // ===== HELPERS =====
 function canSelect(userID) {
@@ -60,34 +60,26 @@ async function getPlayersInDivision(guild) {
   return channel.members ? Array.from(channel.members.values()) : [];
 }
 
-// ===== SHOW DROPDOWN =====
 async function showDropdownForCaptain(captainId) {
   const channel = client.channels.cache.get(allowedChannelID);
   const captainMember = await client.guilds.cache.first().members.fetch(captainId);
-  const players = await getPlayersInDivision(captainMember.guild);
 
-  if (players.length === 0) {
-    channel.send("⚠️ لا يوجد لاعبين في روم التقسيمة.");
+  if (remainingPlayers.length === 0) {
+    channel.send("⚠️ لا يوجد لاعبين متبقين للاختيار.");
     return;
   }
 
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId('select_players')
-      .setPlaceholder('اختر لاعبيك أو اضغط انتهاء الدور/التقسيمة')
+      .setPlaceholder('اختر لاعبيك أو إنهاء الدور/التقسيمة')
       .addOptions([
-        ...players.map(p => ({
+        ...remainingPlayers.map(p => ({
           label: p.nickname || p.user.username,
           value: p.id
         })),
-        {
-          label: "✅ انتهيت من اختياراتي",
-          description: "اضغط هذا الخيار لإعطاء الدور للكابتن التالي"
-        },
-        {
-          label: "🛑 إنهاء التقسيمة",
-          description: "إذا كل الكباتن اختاروا ولا يوجد لاعبين متبقين، اضغط هذا الخيار"
-        }
+        { label: "✅ انتهيت من اختياراتي", description: "اعط الدور للكابتن التالي" },
+        { label: "🛑 إنهاء التقسيمة", description: "انتهت كل الاختيارات" }
       ])
       .setMinValues(1)
       .setMaxValues(getMaxSelectableForCaptain(captainId))
@@ -96,7 +88,6 @@ async function showDropdownForCaptain(captainId) {
   channel.send({ content: `<@${captainId}> الدور عليك! اختر لاعبيك:`, components: [row] });
 }
 
-// ===== NEXT CAPTAIN =====
 function nextCaptainTurn() {
   currentCaptainTurn++;
   const channel = client.channels.cache.get(allowedChannelID);
@@ -109,80 +100,59 @@ function nextCaptainTurn() {
   }
 }
 
-// ===== START COMMAND =====
+// ===== START COMMAND !st =====
 client.on(Events.MessageCreate, async message => {
   if (message.channel.id !== allowedChannelID) return;
+  if (!message.content.startsWith('!st')) return;
 
   const member = await message.guild.members.fetch(message.author.id);
-
-  // !st - بداية التقسيمة
-  if (message.content.startsWith('!st')) {
-    if (!member.roles.cache.has(divisionManagerRoleID)) return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
-
-    const row = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('select_team_count')
-        .setPlaceholder('اختر عدد الفرق')
-        .addOptions([
-          { label: '2 فرق', value: '2' },
-          { label: '4 فرق', value: '4' },
-          { label: '6 فرق', value: '6' }
-        ])
-    );
-    return message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
+  if (!member.roles.cache.has(divisionManagerRoleID)) {
+    return message.reply("❌ ليس لديك صلاحية بدء التقسيمة.");
   }
 
-  // !c - تسجيل الكباتن بعد اختيار عدد الفرق
-  if (message.content.startsWith('!c')) {
-    if (!member.roles.cache.has(divisionManagerRoleID)) return message.reply("❌ ليس لديك صلاحية تسجيل الكباتن.");
-    if (!numberOfTeams) return message.reply("❌ الرجاء اختيار عدد الفرق أولاً باستخدام Dropdown.");
+  const args = message.content.split(/\s+/).slice(1); // !st [عدد الفرق] [@c1 1 ...]
+  if (!args.length) return message.reply("❌ الرجاء تحديد عدد الفرق والكباتن مع المنشن بعد !st");
 
-    // استخراج المنشنات والرقم
-    const args = message.content.split(/\s+/).slice(1); // تجاهل !c
-    captains = [];
-    selections = {};
-    currentCaptainTurn = 0;
+  numberOfTeams = parseInt(args[0]);
+  if (![2,4,6].includes(numberOfTeams)) return message.reply("❌ عدد الفرق يجب أن يكون 2، 4 أو 6.");
 
-    for (let i = 0; i < args.length; i += 2) {
-      const userMention = args[i];
-      const userId = userMention.replace(/[<@!>]/g, '');
-      captains.push(userId);
-      selections[userId] = 0;
-    }
+  captains = [];
+  selections = {};
+  currentCaptainTurn = 0;
 
-    message.channel.send(`✅ الكباتن تم تسجيلهم بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
-    showDropdownForCaptain(captains[currentCaptainTurn]);
+  for (let i = 1; i < args.length; i += 2) {
+    const mention = args[i];
+    const userId = mention.replace(/[<@!>]/g, '');
+    captains.push(userId);
+    selections[userId] = 0;
   }
+
+  const allMembers = await getPlayersInDivision(message.guild);
+  remainingPlayers = allMembers.filter(m => !captains.includes(m.id));
+
+  message.channel.send(`✅ تم تسجيل الكباتن بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
+  showDropdownForCaptain(captains[currentCaptainTurn]);
 });
 
 // ===== INTERACTIONS =====
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isStringSelectMenu()) return;
 
-  if (interaction.customId === 'select_team_count') {
-    numberOfTeams = parseInt(interaction.values[0]);
-    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن استخدم الأمر !c لتسجيل الكباتن بالترتيب (مثال: !c @i39F 1 @Khaled 2)`, components: [] });
-  }
-
   if (interaction.customId !== 'select_players') return;
 
   const captainId = interaction.user.id;
-
-  if (!canSelect(captainId)) {
-    return interaction.reply({ content: "الآن ليس دورك، انتظر حتى يأتي دورك.", ephemeral: true });
-  }
+  if (!canSelect(captainId)) return interaction.reply({ content: "الآن ليس دورك.", ephemeral: true });
 
   const selectedValues = interaction.values;
 
-  // إنهاء التقسيمة
   if (selectedValues.includes("🛑 إنهاء التقسيمة")) {
     captains = [];
     selections = {};
     currentCaptainTurn = 0;
+    remainingPlayers = [];
     return interaction.reply({ content: "🛑 تم إنهاء التقسيمة! يمكنك البدء من جديد.", ephemeral: true });
   }
 
-  // انتهاء الدور للكابتن الحالي
   if (selectedValues.includes("✅ انتهيت من اختياراتي")) {
     nextCaptainTurn();
     return interaction.reply({ content: "✅ انتهى دورك، تم إعطاء الدور للكابتن التالي.", ephemeral: true });
@@ -193,6 +163,7 @@ client.on(Events.InteractionCreate, async interaction => {
   for (const playerId of selectedValues) {
     const member = await interaction.guild.members.fetch(playerId);
     if (member.voice.channel) await member.voice.setChannel(roomID);
+    remainingPlayers = remainingPlayers.filter(p => p.id !== playerId);
   }
 
   selections[captainId] += selectedValues.length;
