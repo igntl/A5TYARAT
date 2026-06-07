@@ -1,4 +1,4 @@
-// index.js
+// index.js - النسخة المحدثة
 const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -135,9 +135,10 @@ client.on(Events.MessageCreate, async message => {
     return message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
   }
 
-  // إذا أرسل منشن الكباتن مباشرة بعد اختيار الفرق
+  // التعامل مع منشن الكباتن بعد اختيار الفرق
   if (waitingForCaptainMentions) {
     const mentions = message.mentions.users;
+    if (!mentions.size) return message.reply("❌ الرجاء منشن الكباتن بالترتيب مع الرقم.");
     captains = [];
     selections = {};
     currentCaptainTurn = 0;
@@ -157,10 +158,11 @@ client.on(Events.MessageCreate, async message => {
 // ===== INTERACTIONS =====
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isStringSelectMenu()) return;
+
   if (interaction.customId === 'select_team_count') {
     numberOfTeams = parseInt(interaction.values[0]);
     waitingForCaptainMentions = true;
-    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن منشن الكباتن بالترتيب (مثال: @Fahad 1 @Khaled 2)`, components: [] });
+    return interaction.update({ content: `✅ اختر عدد الفرق: ${numberOfTeams}\nالآن منشن الكباتن بالترتيب مباشرة (مثال: @Fahad 1 @Khaled 2)`, components: [] });
   }
 
   if (interaction.customId !== 'select_players') return;
