@@ -1,4 +1,4 @@
-// index.js - البوت كامل تفاعلي
+// index.js - بوت تقسيمات FIFA Pro Club تفاعلي
 const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -17,7 +17,7 @@ const divisionRoomID = "1475334190034587661"; // روم التقسيمة
 
 const teamRooms = {
   1: "1483219750027919422",
-  2: "151318058758478446",
+  2: "1513180587584782446",
   3: "ROOM_ID_3",
   4: "ROOM_ID_4",
   5: "ROOM_ID_5",
@@ -132,7 +132,6 @@ client.on(Events.InteractionCreate, async interaction => {
   // اختيار عدد الفرق
   if (interaction.customId === 'select_team_count') {
     numberOfTeams = parseInt(interaction.values[0]);
-    // جمع جميع اللاعبين في روم التقسيمة
     const allMembers = await getPlayersInDivision(interaction.guild);
     remainingPlayers = allMembers;
     captainSelectionPhase = true;
@@ -162,7 +161,12 @@ client.on(Events.InteractionCreate, async interaction => {
     captainSelectionPhase = false;
 
     await interaction.update({ content: `✅ تم تسجيل الكباتن بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`, components: [] });
-    showDropdownForCaptain(captains[currentCaptainTurn]);
+    
+    // بدء الدور للكابتن الأول بعد نصف ثانية
+    setTimeout(() => {
+      showDropdownForCaptain(captains[currentCaptainTurn]);
+    }, 500);
+
     return;
   }
 
@@ -194,7 +198,7 @@ client.on(Events.InteractionCreate, async interaction => {
       remainingPlayers = remainingPlayers.filter(p => p.id !== playerId);
     }
 
-    selections[captainId] += selectedValues.length;
+    selections[captainId] = (selections[captainId] || 0) + selectedValues.length;
     await interaction.reply({ content: "✅ تم نقل اللاعبين!", ephemeral: true });
 
     if (selections[captainId] >= getMaxSelectableForCaptain(captainId)) {
