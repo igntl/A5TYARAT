@@ -1,4 +1,4 @@
-// index.js - النسخة المحدثة
+// index.js
 const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -134,25 +134,29 @@ client.on(Events.MessageCreate, async message => {
     );
     return message.channel.send({ content: 'اختر عدد الفرق:', components: [row] });
   }
+});
 
-  // التعامل مع منشن الكباتن بعد اختيار الفرق
-  if (waitingForCaptainMentions) {
-    const mentions = message.mentions.users;
-    if (!mentions.size) return message.reply("❌ الرجاء منشن الكباتن بالترتيب مع الرقم.");
-    captains = [];
-    selections = {};
-    currentCaptainTurn = 0;
-    let index = 0;
-    mentions.forEach((user) => {
-      captains.push(user.id);
-      selections[user.id] = 0;
-      index++;
-    });
-    waitingForCaptainMentions = false;
-    message.channel.send(`✅ الكباتن تم تسجيلهم بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
-    showDropdownForCaptain(captains[currentCaptainTurn]);
-    return;
-  }
+// ===== CAPTAIN MENTIONS =====
+client.on(Events.MessageCreate, async message => {
+  if (!waitingForCaptainMentions) return;
+  if (message.channel.id !== allowedChannelID) return;
+
+  const mentions = message.mentions.users;
+  if (!mentions.size) return message.reply("❌ الرجاء منشن الكباتن بالترتيب مع الرقم.");
+
+  captains = [];
+  selections = {};
+  currentCaptainTurn = 0;
+
+  mentions.forEach((user) => {
+    captains.push(user.id);
+    selections[user.id] = 0;
+  });
+
+  waitingForCaptainMentions = false;
+
+  message.channel.send(`✅ الكباتن تم تسجيلهم بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`);
+  showDropdownForCaptain(captains[currentCaptainTurn]);
 });
 
 // ===== INTERACTIONS =====
@@ -169,7 +173,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
   const captainId = interaction.user.id;
 
-  if (!canSelect(captainId)) {
+  if (!captainId || !canSelect(captainId)) {
     return interaction.reply({ content: "الآن ليس دورك، انتظر حتى يأتي دورك.", ephemeral: true });
   }
 
