@@ -30,7 +30,7 @@ const specialRanks = {
 };
 
 // ===== ROLE =====
-const divisionManagerRoleID = "ID_رتبة_المسؤول_هنا"; // ضع هنا ID رتبة المسؤول
+const divisionManagerRoleID = "1475334752436359320"; // ID الرول الصحيح
 
 // ===== STATE =====
 let numberOfTeams = 0;
