@@ -1,4 +1,3 @@
-// index.js - بوت تقسيمات FIFA Pro Club تفاعلي
 const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -24,12 +23,11 @@ const teamRooms = {
   6: "ROOM_ID_6"
 };
 
+const divisionManagerRoleID = "1475334752436359320"; // رول مسؤول التقسيمة
 const specialRanks = {
   capitan: "1495426762971283528",
   belt: "1490247564086214787"
 };
-
-const divisionManagerRoleID = "1475334752436359320"; // رول مسؤول التقسيمة
 
 // ===== STATE =====
 let numberOfTeams = 0;
@@ -64,7 +62,6 @@ function getMaxSelectableForCaptain(captainId) {
 // ===== SHOW DROPDOWN FOR CAPTAINS =====
 async function showDropdownForCaptain(captainId) {
   const channel = client.channels.cache.get(allowedChannelID);
-  const captainMember = await client.guilds.cache.first().members.fetch(captainId);
 
   if (remainingPlayers.length === 0) {
     channel.send("⚠️ لا يوجد لاعبين متبقين للاختيار.");
@@ -162,11 +159,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
     await interaction.update({ content: `✅ تم تسجيل الكباتن بالترتيب:\n${captains.map((id,i)=>`${i+1}️⃣ <@${id}>`).join("\n")}`, components: [] });
     
-    // بدء الدور للكابتن الأول بعد نصف ثانية
-    setTimeout(() => {
-      showDropdownForCaptain(captains[currentCaptainTurn]);
-    }, 500);
-
+    // بدء الدور للكابتن الأول مباشرة
+    showDropdownForCaptain(captains[currentCaptainTurn]);
     return;
   }
 
