@@ -1,5 +1,5 @@
 // index.js
-const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Events, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 require('dotenv').config();
 
 const client = new Client({
@@ -15,7 +15,6 @@ const client = new Client({
 const allowedChannelID = "1483219896069525665"; // شات البوت
 const divisionRoomID = "1475334190034587661"; // روم التقسيمة
 
-// رومات الكباتن (تضع باقي IDs لاحقًا)
 const teamRooms = {
   1: "1483219750027919422",
   2: "1513180587584782446",
@@ -25,7 +24,6 @@ const teamRooms = {
   6: "ROOM_ID_6"
 };
 
-// رتب خاصة
 const specialRanks = {
   capitan: "1495426762971283528",
   belt: "1490247564086214787"
@@ -35,7 +33,7 @@ const specialRanks = {
 let numberOfTeams = 0;
 let captains = [];
 let currentCaptainTurn = 0;
-let selections = {}; // عدد اختيارات كل كابتن
+let selections = {};
 
 // ========== HELPERS ==========
 function isCaptain(userID) {
@@ -57,23 +55,13 @@ function getMaxSelectableForCaptain(captainId) {
   return 2;
 }
 
-function nextCaptainTurn(channel) {
-  currentCaptainTurn++;
-  if (currentCaptainTurn >= captains.length) {
-    channel.send("✅ اكتملت كل الاختيارات! جميع اللاعبين تم توزيعهم.");
-    currentCaptainTurn = -1;
-  } else {
-    showDropdownForCaptain(captains[currentCaptainTurn], channel);
-  }
-}
-
+// ========== UTILITY FUNCTIONS ==========
 async function getPlayersInDivision(guild) {
   const channel = guild.channels.cache.get(divisionRoomID);
   if (!channel) return [];
   return channel.members ? Array.from(channel.members.values()) : [];
 }
 
-// ========== SHOW DROPDOWN ==========
 async function showDropdownForCaptain(captainId, channel) {
   const captainMember = await client.guilds.cache.first().members.fetch(captainId);
   const players = await getPlayersInDivision(captainMember.guild);
@@ -83,25 +71,34 @@ async function showDropdownForCaptain(captainId, channel) {
     return;
   }
 
-  const row = new ActionRowBuilder();
-  row.addComponents(
+  const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId('select_players')
       .setPlaceholder('اختر لاعبيك...')
-      .addOptions(
-        players.map(p => ({
-          label: p.user.username,
-          value: p.id
-        }))
-      )
+      .addOptions(players.map(p => ({ label: p.user.username, value: p.id })))
       .setMinValues(1)
       .setMaxValues(getMaxSelectableForCaptain(captainId))
   );
 
-  channel.send({
-    content: `<@${captainId}> الدور عليك! اختر لاعبيك:`,
-    components: [row]
-  });
+  // زر إنهاء التقسيمة
+  const endRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('end_division')
+      .setLabel('إنهاء التقسيمة')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  channel.send({ content: `<@${captainId}> الدور عليك! اختر لاعبيك:`, components: [row, endRow] });
+}
+
+async function nextCaptainTurn(channel) {
+  currentCaptainTurn++;
+  if (currentCaptainTurn >= captains.length) {
+    channel.send("✅ اكتملت كل الاختيارات! جميع اللاعبين تم توزيعهم.");
+    currentCaptainTurn = -1;
+  } else {
+    showDropdownForCaptain(captains[currentCaptainTurn], channel);
+  }
 }
 
 // ========== COMMANDS ==========
@@ -136,34 +133,41 @@ client.on(Events.MessageCreate, async (message) => {
       selections[id] = 0;
     }
 
-    // عرض لائحة اللاعبين للكابتن الأول
+    // عرض اللائحة للكابتن الأول
     showDropdownForCaptain(captains[currentCaptainTurn], message.channel);
   }
 });
 
 // ========== INTERACTIONS ==========
 client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isStringSelectMenu()) return;
-  if (interaction.customId !== 'select_players') return;
-  if (!canSelect(interaction.user.id)) {
-    return interaction.reply({ content: "الآن ليس دورك، انتظر حتى يأتي دورك.", ephemeral: true });
+  if (interaction.isStringSelectMenu() && interaction.customId === 'select_players') {
+    if (!canSelect(interaction.user.id)) {
+      return interaction.reply({ content: "الآن ليس دورك، انتظر حتى يأتي دورك.", ephemeral: true });
+    }
+
+    const captainId = interaction.user.id;
+    const selectedPlayers = interaction.values;
+    const roomID = teamRooms[currentCaptainTurn + 1];
+
+    for (const playerId of selectedPlayers) {
+      const member = await interaction.guild.members.fetch(playerId);
+      if (member.voice.channel) await member.voice.setChannel(roomID);
+    }
+
+    selections[captainId] += selectedPlayers.length;
+    await interaction.reply({ content: "✅ تم نقل اللاعبين!", ephemeral: true });
+
+    if (selections[captainId] >= getMaxSelectableForCaptain(captainId)) {
+      nextCaptainTurn(interaction.channel);
+    }
   }
 
-  const captainId = interaction.user.id;
-  const selectedPlayers = interaction.values;
-  const roomID = teamRooms[currentCaptainTurn + 1];
-
-  for (const playerId of selectedPlayers) {
-    const member = await interaction.guild.members.fetch(playerId);
-    if (member.voice.channel) await member.voice.setChannel(roomID);
-  }
-
-  selections[captainId] += selectedPlayers.length;
-
-  await interaction.reply({ content: "✅ تم نقل اللاعبين!", ephemeral: true });
-
-  if (selections[captainId] >= getMaxSelectableForCaptain(captainId)) {
-    nextCaptainTurn(interaction.channel);
+  if (interaction.isButton() && interaction.customId === 'end_division') {
+    // إعادة تهيئة التقسيمة
+    captains = [];
+    selections = {};
+    currentCaptainTurn = 0;
+    interaction.reply({ content: "🛑 تم إنهاء التقسيمة! يمكنك البدء من جديد.", ephemeral: true });
   }
 });
 
