@@ -156,7 +156,7 @@ class DraftView(discord.ui.View):
 # واجهة إعادة التهيئة النهائية
 class ResetButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="🏁 إنهاء السهرة وإعادة تهيئة البوت", style=discord.ButtonStyle.danger)
+        super().__init__(label=" إنهاء التقسيمة وإعادة تهيئة البوت", style=discord.ButtonStyle.danger)
     async def callback(self, interaction: discord.Interaction):
         if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
             await interaction.response.send_message("❌ هذا الخيار مخصص للمسؤولين فقط.", ephemeral=True)
@@ -164,7 +164,7 @@ class ResetButton(discord.ui.Button):
         session["active"] = False
         session["players"] = []
         session["captains"] = []
-        await interaction.response.edit_message(content="🏁 **تم إنهاء الجلسة وتصفير البوت بنجاح! جاهز للتقسيمة القادمة.**", embed=None, view=None)
+        await interaction.response.edit_message(content="🏁 **تم إنهاء التقسيمة وتصفير البوت بنجاح جاهز للتقسيمة القادمة.**", embed=None, view=None)
 
 class ResetView(discord.ui.View):
     def __init__(self):
@@ -179,8 +179,8 @@ async def send_next_turn(channel, guild):
     
     if not session["players"]:
         embed = discord.Embed(
-            title="🎉 تم توزيع جميع اللاعبين بنجاح كفوو!",
-            description="انتهت عملية الدرفت بالكامل، يتوجب على المسؤول الضغط على الزر بالأسفل لتصفير البوت.",
+            title=" تم توزيع جميع اللاعبين بنجاح !",
+            description="انتهت عملية التقسيم بالكامل على المسؤول الضغط على الزر بالأسفل لتصفير البوت.",
             color=discord.Color.green()
         )
         await channel.send(embed=embed, view=ResetView())
@@ -211,7 +211,7 @@ async def send_next_turn(channel, guild):
     await channel.send(content=captain_member.mention, embed=embed, view=DraftView(session["players"], guild, picks_allowed))
 
 # --- الأمر المائل الأساسي المطور المباشر ---
-@bot.tree.command(name="تقسيم", description="بدء نظام جولات الدرفت المباشر لفرق البرو كلوب")
+@bot.tree.command(name="تقسيم", description="بدء التقسيمه")
 @app_commands.describe(
     عدد_الفرق="اختر عدد الفرق المشاركة (2 أو 4 أو 6)",
     كابتن_1="الكابتن الأول لروم 1",
@@ -270,7 +270,7 @@ async def تقسيم(
     session["current_index"] = 0
     session["round"] = 1
 
-    await interaction.response.send_message(f"🎬 **تم إطلاق نظام الدرفت الجديد بنجاح لـ {عدد_الفرق} فرق! جاري تجهيز المنيو الأول...**")
+    await interaction.response.send_message(f" **تم إطلاق نظام التقسيمات التلقائي بنجاح لـ {عدد_الفرق} فرق جاري تجهيز المنيو الأول...**")
     
     # استدعاء أول دور فوراً وبشكل مباشر ومضمون
     await send_next_turn(interaction.channel, interaction.guild)
