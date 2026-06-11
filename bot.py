@@ -270,7 +270,7 @@ async def تقسيم(
     session["current_index"] = 0
     session["round"] = 1
 
-    await interaction.response.send_message(f" **تم إطلاق نظام التقسيمات التلقائي بنجاح لـ {عدد_الفرق} فرق جاري تجهيز المنيو الأول...**")
+    await interaction.response.send_message(f" **تم إطلاق نظام التقسيمات التلقائي بنجاح لـ {عدد_الفرق} فرق...**")
     
     # استدعاء أول دور فوراً وبشكل مباشر ومضمون
     await send_next_turn(interaction.channel, interaction.guild)
