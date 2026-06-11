@@ -204,7 +204,7 @@ async def send_next_turn(channel, guild):
     embed = discord.Embed(
         title=f"📋 جولة الاختيار رقم {session['round']}",
         description=f"الدور الآن عندك يا كابتن: {captain_member.mention}\n"
-                    f"الرجاء فتح القائمة المنسدلة بالأسفل واختيار لاعبيك المفضلين.\n\n"
+                    f"الرجاء فتح القائمة بالأسفل واختيار لاعبيك المفضلين.\n\n"
                     f"⚡ حصتك المتاحة في هذا الدور: **{picks_allowed} لاعبين** دفعة واحدة.",
         color=discord.Color.blue()
     )
