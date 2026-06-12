@@ -32,7 +32,7 @@ class NewProClubBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
     async def setup_hook(self):
         await self.tree.sync()
-        print("⚽ تم تشغيل البوت الجديد بنجاح ومزامنة الأوامر!")
+        print("⚽ تم تشغيل البوت بنجاح ومزامنة الأوامر!")
 
 bot = NewProClubBot()
 
@@ -45,19 +45,7 @@ session = {
     "round": 1
 }
 
-# دالة ذكية لحساب عدد اللاعبين المتاح اختيارهم للكابتن حسب رتبته والجولة
-def get_max_picks(captain_member, round_num):
-    is_special = any(r.id in [ROLE_HEZAM_ID, ROLE_CAPITANO_ID] for r in captain_member.roles)
-    if is_special:
-        if round_num == 1:
-            return 3
-        elif round_num == 2:
-            return 1
-        else:
-            return 2
-    return 1
-
-# تابع بناء خيارات القائمة المنسدلة (Pagination يدعم حتى 80 لاعب بسلاسة)
+# تابع بناء خيارات القائمة المنسدلة
 def make_options(player_ids, guild, page=0):
     valid_members = []
     for p_id in player_ids:
@@ -82,12 +70,13 @@ def make_options(player_ids, guild, page=0):
 
 # الواجهة البرمجية المباشرة لاختيار اللاعبين
 class DraftMenu(discord.ui.Select):
-    def __init__(self, player_ids, guild, max_picks=1, page=0):
+    def __init__(self, player_ids, guild, max_picks=2, page=0):
         options, _ = make_options(player_ids, guild, page)
         self.page = page
         self.player_ids = player_ids
+        self.max_picks = max_picks
         super().__init__(
-            placeholder="افتح القائمة واحتل لاعبيك الحين...",
+            placeholder="اختار من القائمة اللي تحت...",
             min_values=1,
             max_values=min(max_picks, len(options)),
             options=options
@@ -108,11 +97,11 @@ class DraftMenu(discord.ui.Select):
         # التعامل مع أزرار التنقل بين الصفحات
         if selection.startswith("page_next_"):
             p = int(selection.split("_")[2])
-            await interaction.response.edit_message(view=DraftView(self.player_ids, interaction.guild, self.max_values, p + 1))
+            await interaction.response.edit_message(view=DraftView(self.player_ids, interaction.guild, self.max_picks, p + 1))
             return
         elif selection.startswith("page_prev_"):
             p = int(selection.split("_")[2])
-            await interaction.response.edit_message(view=DraftView(self.player_ids, interaction.guild, self.max_values, p - 1))
+            await interaction.response.edit_message(view=DraftView(self.player_ids, interaction.guild, self.max_picks, p - 1))
             return
         elif selection == "none":
             return
@@ -140,7 +129,6 @@ class DraftMenu(discord.ui.Select):
             session["current_index"] = 0
             session["round"] += 1
 
-        # حذف الرسالة الحالية لإبقاء الشات نظيفاً وإرسال الدور الجديد
         try:
             await interaction.message.delete()
         except:
@@ -149,14 +137,14 @@ class DraftMenu(discord.ui.Select):
         await send_next_turn(interaction.channel, interaction.guild)
 
 class DraftView(discord.ui.View):
-    def __init__(self, player_ids, guild, max_picks=1, page=0):
+    def __init__(self, player_ids, guild, max_picks=2, page=0):
         super().__init__(timeout=None)
         self.add_item(DraftMenu(player_ids, guild, max_picks, page))
 
 # واجهة إعادة التهيئة النهائية
 class ResetButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label=" إنهاء التقسيمة وإعادة تهيئة البوت", style=discord.ButtonStyle.danger)
+        super().__init__(label="🏁 إنهاء السهرة وإعادة تهيئة البوت", style=discord.ButtonStyle.danger)
     async def callback(self, interaction: discord.Interaction):
         if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
             await interaction.response.send_message("❌ هذا الخيار مخصص للمسؤولين فقط.", ephemeral=True)
@@ -164,34 +152,31 @@ class ResetButton(discord.ui.Button):
         session["active"] = False
         session["players"] = []
         session["captains"] = []
-        await interaction.response.edit_message(content="🏁 **تم إنهاء التقسيمة وتصفير البوت بنجاح جاهز للتقسيمة القادمة.**", embed=None, view=None)
+        await interaction.response.edit_message(content="🏁 **تم إنهاء التقسيمه وتصفير البوت بنجاح! جاهز للتقسيمة القادمة.**", embed=None, view=None)
 
 class ResetView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(ResetButton())
 
-# دالة إرسال جولة الاختيار التالية المستقلة والمباشرة
+# دالة إرسال جولة الاختيار التالية
 async def send_next_turn(channel, guild):
-    # تحيين وتصفية قائمة اللاعبين المتواجدين فعلياً بروم التجمع في هذه اللحظة
     _, actual_available = make_options(session["players"], guild)
     session["players"] = [m.id for m in actual_available]
     
     if not session["players"]:
         embed = discord.Embed(
             title=" تم توزيع جميع اللاعبين بنجاح !",
-            description="انتهت عملية التقسيم بالكامل على المسؤول الضغط على الزر بالأسفل لتصفير البوت.",
+            description="انتهت عملية التقسيمه بالكامل، يتوجب على المسؤول الضغط على الزر بالأسفل لتصفير البوت.",
             color=discord.Color.green()
         )
         await channel.send(embed=embed, view=ResetView())
         return
 
-    # جلب بيانات كابتن الدور الحالي
     cap_id = session["captains"][session["current_index"]]
     captain_member = guild.get_member(cap_id)
     
     if not captain_member:
-        # لو الكابتن طلع فجأة، نمشي الدور للي بعده تلقائياً
         session["current_index"] += 1
         if session["current_index"] >= len(session["captains"]):
             session["current_index"] = 0
@@ -199,19 +184,20 @@ async def send_next_turn(channel, guild):
         await send_next_turn(channel, guild)
         return
 
-    picks_allowed = get_max_picks(captain_member, session["round"])
+    # تم التثبيت على لاعبين اثنين (2) في كل دور لجميع الكباتن دائماً
+    picks_allowed = 2
     
     embed = discord.Embed(
         title=f"📋 جولة الاختيار رقم {session['round']}",
         description=f"الدور الآن عندك يا كابتن: {captain_member.mention}\n"
-                    f"الرجاء فتح القائمة بالأسفل واختيار لاعبيك المفضلين.\n\n"
+                    f"الرجاء اختيار لاعبيك المفضلين من القائمة بالأسفل.\n\n"
                     f"⚡ حصتك المتاحة في هذا الدور: **{picks_allowed} لاعبين** دفعة واحدة.",
         color=discord.Color.blue()
     )
     await channel.send(content=captain_member.mention, embed=embed, view=DraftView(session["players"], guild, picks_allowed))
 
 # --- الأمر المائل الأساسي المطور المباشر ---
-@bot.tree.command(name="تقسيم", description="بدء التقسيمه")
+@bot.tree.command(name="تقسيم", description="بدء نظام التقسيمات المباشر ")
 @app_commands.describe(
     عدد_الفرق="اختر عدد الفرق المشاركة (2 أو 4 أو 6)",
     كابتن_1="الكابتن الأول لروم 1",
@@ -248,7 +234,6 @@ async def تقسيم(
         await interaction.response.send_message("❌ روم التقسيمة الصوتي فارغ حالياً! يجب دخول اللاعبين أولاً.", ephemeral=True)
         return
 
-    # تجميع كباتن السهرة حسب العدد المختار
     all_caps = [كابتن_1, كابتن_2, كابتن_3, كابتن_4, كابتن_5, كابتن_6]
     chosen_caps = [c.id for c in all_caps[:عدد_الفرق] if c is not None]
 
@@ -256,26 +241,23 @@ async def تقسيم(
         await interaction.response.send_message(f"❌ خطأ: اخترت {عدد_الفرق} فرق ولكن لم تقم بمنشنة كباتن كافيين بالتوالي.", ephemeral=True)
         return
 
-    # تجهيز قائمة اللاعبين المتواجدين بالصوت باستثناء الكباتن
     pool = [m.id for m in lobby_channel.members if m.id not in chosen_caps]
 
     if not pool:
         await interaction.response.send_message("❌ لا يوجد لاعبين متاحين للتقسيم داخل الروم الصوتي (فقط الكباتن متواجدين)!", ephemeral=True)
         return
 
-    # إطلاق الجلسة وتعبئة البيانات بالكامل بشكل صريح
     session["active"] = True
     session["captains"] = chosen_caps
     session["players"] = pool
     session["current_index"] = 0
     session["round"] = 1
 
-    await interaction.response.send_message(f" **تم إطلاق نظام التقسيمات التلقائي بنجاح لـ {عدد_الفرق} فرق...**")
+    await interaction.response.send_message(f"🎬 **بدأ نظام التقسيم التلقائي بنجاح لـ {عدد_الفرق} فرق!**")
     
-    # استدعاء أول دور فوراً وبشكل مباشر ومضمون
     await send_next_turn(interaction.channel, interaction.guild)
 
-# تشغيل البوت بسيرفر ريلوي
+# تشغيل البوت
 token = os.getenv("DISCORD_TOKEN")
 if token:
     bot.run(token)
