@@ -42,7 +42,8 @@ session = {
     "captains": [],
     "players": [],
     "current_index": 0,
-    "round": 1
+    "round": 1,
+    "picks_allowed": 2  # القيمة الافتراضية التلقائية عند التشغيل
 }
 
 # تابع بناء خيارات القائمة المنسدلة
@@ -144,7 +145,7 @@ class DraftView(discord.ui.View):
 # واجهة إعادة التهيئة النهائية
 class ResetButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="🏁 إنهاء السهرة وإعادة تهيئة البوت", style=discord.ButtonStyle.danger)
+        super().__init__(label=" إنهاء التقسيمهوإعادة تهيئة البوت", style=discord.ButtonStyle.danger)
     async def callback(self, interaction: discord.Interaction):
         if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
             await interaction.response.send_message("❌ هذا الخيار مخصص للمسؤولين فقط.", ephemeral=True)
@@ -152,7 +153,8 @@ class ResetButton(discord.ui.Button):
         session["active"] = False
         session["players"] = []
         session["captains"] = []
-        await interaction.response.edit_message(content="🏁 **تم إنهاء التقسيمه وتصفير البوت بنجاح! جاهز للتقسيمة القادمة.**", embed=None, view=None)
+        session["picks_allowed"] = 2  # تصفير العدد للافتراضي عند إنهاء السهرة
+        await interaction.response.edit_message(content=" **تم إنهاء التقسيمه وتصفير البوت بنجاح! جاهز للتقسيمة القادمة.**", embed=None, view=None)
 
 class ResetView(discord.ui.View):
     def __init__(self):
@@ -184,8 +186,8 @@ async def send_next_turn(channel, guild):
         await send_next_turn(channel, guild)
         return
 
-    # تم التثبيت على لاعبين اثنين (2) في كل دور لجميع الكباتن دائماً
-    picks_allowed = 2
+    # يعتمد على العدد المحدد والمخزن حالياً بالذاكرة
+    picks_allowed = session["picks_allowed"]
     
     embed = discord.Embed(
         title=f"📋 جولة الاختيار رقم {session['round']}",
@@ -252,10 +254,26 @@ async def تقسيم(
     session["players"] = pool
     session["current_index"] = 0
     session["round"] = 1
+    session["picks_allowed"] = 2  # يعود تلقائياً لـ 2 لاعبين مع كل بداية تقسيم جديدة
 
-    await interaction.response.send_message(f"🎬 **بدأ نظام التقسيم التلقائي بنجاح لـ {عدد_الفرق} فرق!**")
+    await interaction.response.send_message(f" **بدأ نظام التقسيم التلقائي بنجاح لـ {عدد_الفرق} فرق!**")
     
     await send_next_turn(interaction.channel, interaction.guild)
+
+# --- أمر تعديل الاختيارات المخصص للمسؤول ---
+@bot.tree.command(name="تعديل_الاختيارات", description="تعديل عدد اللاعبين المتاح اختيارهم للكباتن في الدور الحالي والأدوار القادمة")
+@app_commands.describe(العدد="أدخل عدد الاختيارات المطلوب (مثال: 3 أو 2)")
+async def تعديل_الاختيارات(interaction: discord.Interaction, العدد: int):
+    if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
+        await interaction.response.send_message("❌ عذراً، هذا الأمر مخصص فقط لمن يحمل رتبة المسؤول عن التقسيمة!", ephemeral=True)
+        return
+
+    if العدد < 1 or العدد > 23:
+        await interaction.response.send_message("❌ الرجاء إدخال عدد صحيح ومنطقي (بين 1 و 23).", ephemeral=True)
+        return
+
+    session["picks_allowed"] = العدد
+    await interaction.response.send_message(f"⚙️ **تحديث الإعدادات:** تم تعديل حصة الاختيار بنجاح! الدور القادم وكل الأدوار القادمة ستسمح للكباتن باختيار **{العدد} لاعبين** دفعة واحدة.")
 
 # تشغيل البوت
 token = os.getenv("DISCORD_TOKEN")
