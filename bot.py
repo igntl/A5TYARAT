@@ -71,9 +71,13 @@ def make_options(guild, page=0):
 # الواجهة البرمجية المباشرة لاختيار اللاعبين
 class DraftMenu(discord.ui.Select):
     def __init__(self, guild, max_picks=2, page=0):
-        options, _ = make_options(guild, page)
+        self.guild = guild
         self.page = page
         self.max_picks = max_picks
+        
+        # بناء الخيارات المبدئية عند إرسال القائمة أول مرة
+        options, _ = make_options(guild, page)
+        
         super().__init__(
             placeholder="اختار من القائمة اللي تحت...",
             min_values=1,
@@ -102,11 +106,26 @@ class DraftMenu(discord.ui.Select):
             await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, p - 1))
             return
         elif selection == "none":
+            # تحديث ذكي تلقائي وإعادة عرض اللائحة إذا فتح القائمة وهي فارغة وضغط عليها
+            await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, self.page))
+            return
+
+        # ميزة التحديث والتأكد اللحظي التلقائي قبل النقل (لمنع كراش السحب الخاطئ للأسماء المفقودة)
+        selected_members = [int(v) for v in self.values if not v.startswith("page_")]
+        lobby_channel = interaction.guild.get_channel(LOBBY_VOICE_ID)
+        current_lobby_ids = [m.id for m in lobby_channel.members] if lobby_channel else []
+
+        # التحقق: إذا حاول الكابتن اختيار شخص طلع من الروم فجأة، نحدث القائمة فوراً وننبهه
+        missing_players = [p_id for p_id in selected_members if p_id not in current_lobby_ids]
+        if missing_players:
+            await interaction.response.edit_message(
+                content=f"{interaction.user.mention} ⚠️ تملّص بعض اللاعبين أو تغيرت روماتهم! تم تحديث القائمة تلقائياً بالمتواجدين حالياً، يرجى إعادة الاختيار.",
+                view=DraftView(interaction.guild, self.max_picks, self.page)
+            )
             return
 
         await interaction.response.defer()
         
-        selected_members = [int(v) for v in self.values if not v.startswith("page_")]
         target_room_id = TEAM_CHANNELS[session["current_index"]]
         target_room = interaction.guild.get_channel(target_room_id)
         
@@ -184,6 +203,7 @@ async def send_next_turn(channel, guild):
         title=f"📋 جولة الاختيار رقم {session['round']}",
         description=f"الدور الآن عندك يا كابتن: {captain_member.mention}\n"
                     f"الرجاء اختيار لاعبيك المفضلين من القائمة بالأسفل.\n\n"
+                    f"✨ *ميزة ذكية: القائمة مدعومة بالتحديث التلقائي اللحظي فور استخدامها.*\n\n"
                     f"⚡ حصتك المتاحة في هذا الدور: **{picks_allowed} لاعبين** دفعة واحدة.",
         color=discord.Color.blue()
     )
@@ -247,7 +267,7 @@ async def تقسيم(
 # --- أمر تعديل الاختيارات/المراكز المحدث والمضمون للظهور فوراً ---
 @bot.tree.command(name="تعديل_الاختيارات", description="تعديل عدد اللاعبين المتاح اختيارهم للكباتن في الدور الحالي والأدوار القادمة")
 @app_commands.describe(العدد="أدخل عدد الاختيارات المطلوب للتحكم بالعدد والمراكز (مثال: 3 أو 2)")
-@app_commands.default_permissions(use_application_commands=True) # إجبار ديسكورد على إظهار الأمر فوراً بالواجهة
+@app_commands.default_permissions(use_application_commands=True)
 async def تعديل_الاختيارات(interaction: discord.Interaction, العدد: int):
     if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
         await interaction.response.send_message("❌ عذراً، هذا الأمر مخصص فقط لمن يحمل رتبة المسؤول عن التقسيمة!", ephemeral=True)
