@@ -11,14 +11,16 @@ ROLE_CAPITANO_ID = 1495426762971283528      # رتبة كابيتانو
 TEXT_CHANNEL_ID = 1483219896069525665       # شات البوت الكتابي المسموح به
 LOBBY_VOICE_ID = 1475334190034587661        # روم التقسيمة الصوتي (التجمع)
 
-# رومات الكباتن بالترتيب الدقيق من 1 إلى 6
+# رومات الكباتن بالترتيب الدقيق من 1 إلى 8 [تمت إضافتها بالكامل وتعديلها بناءً على رسالتك]
 TEAM_CHANNELS = [
     1483219750027919422,  # روم الكابتن الأول
     1513180587584782446,  # روم الكابتن الثاني
-    1514791919623077938,  # روم الكابتن 3
-    1514791956763512874,  # روم الكابتن 4
-    0,                    # روم الكابتن 5
-    0                     # روم الكابتن 6
+    1514791919623077938,  # روم الكابتن الثالث
+    1514791956763512874,  # روم الكابتن الرابع
+    1523555136050303017,  # روم الكابتن الخامس
+    1523555190102556703,  # روم الكابتن السادس
+    1523555255751545032,  # روم الكابتن السابع
+    1523555313515761744   # روم الكابتن الثامن
 ]
 
 # --- إعدادات البوت الأساسية ---
@@ -32,7 +34,7 @@ class NewProClubBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
     async def setup_hook(self):
         await self.tree.sync()
-        print("⚽ تم تشغيل البوت بنجاح ومزامنة الأوامر!")
+        print("⚽ تم تشغيل البوت بنجاح بالآيديات الـ 8 المحدثة!")
 
 bot = NewProClubBot()
 
@@ -42,7 +44,7 @@ session = {
     "captains": [],
     "current_index": 0,
     "round": 1,
-    "picks_allowed": 2  # القيمة الافتراضية التلقائية عند التشغيل
+    "picks_allowed": 2  
 }
 
 # تابع بناء خيارات القائمة المنسدلة بناءً على المتواجدين بالروم الصوتي حالياً فقط
@@ -75,7 +77,6 @@ class DraftMenu(discord.ui.Select):
         self.page = page
         self.max_picks = max_picks
         
-        # بناء الخيارات المبدئية عند إرسال القائمة أول مرة
         options, _ = make_options(guild, page)
         
         super().__init__(
@@ -106,16 +107,13 @@ class DraftMenu(discord.ui.Select):
             await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, p - 1))
             return
         elif selection == "none":
-            # تحديث ذكي تلقائي وإعادة عرض اللائحة إذا فتح القائمة وهي فارغة وضغط عليها
             await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, self.page))
             return
 
-        # ميزة التحديث والتأكد اللحظي التلقائي قبل النقل (لمنع كراش السحب الخاطئ للأسماء المفقودة)
         selected_members = [int(v) for v in self.values if not v.startswith("page_")]
         lobby_channel = interaction.guild.get_channel(LOBBY_VOICE_ID)
         current_lobby_ids = [m.id for m in lobby_channel.members] if lobby_channel else []
 
-        # التحقق: إذا حاول الكابتن اختيار شخص طلع من الروم فجأة، نحدث القائمة فوراً وننبهه
         missing_players = [p_id for p_id in selected_members if p_id not in current_lobby_ids]
         if missing_players:
             await interaction.response.edit_message(
@@ -209,16 +207,19 @@ async def send_next_turn(channel, guild):
     )
     await channel.send(content=captain_member.mention, embed=embed, view=DraftView(guild, picks_allowed))
 
-# --- الأمر المائل الأساسي المطور المباشر ---
-@bot.tree.command(name="تقسيم", description="بدء نظام التقسيمات المباشر ")
+# --- الأمر المائل بالترتيب المطلوب والمدعوم حتى 8 فرق واختيارات مرنة بالكامل ---
+@bot.tree.command(name="تقسيم", description="بدء نظام التقسيمات المباشر حتى 8 فرق")
 @app_commands.describe(
-    عدد_الفرق="اختر عدد الفرق المشاركة (2 أو 4 أو 6)",
+    عدد_الفرق="اختر عدد الفرق المشاركة (2، 4، 6، أو 8)",
     كابتن_1="الكابتن الأول لروم 1",
     كابتن_2="الكابتن الثاني لروم 2",
     كابتن_3="الكابتن الثالث لروم 3 (اختياري)",
     كابتن_4="الكابتن الرابع لروم 4 (اختياري)",
     كابتن_5="الكابتن الخامس لروم 5 (اختياري)",
-    كابتن_6="الكابتن السادس لروم 6 (اختياري)"
+    كابتن_6="الكابتن السادس لروم 6 (اختياري)",
+    كابتن_7="الكابتن السابع لروم 7 (اختياري)",
+    كابتن_8="الكابتن الثامن لروم 8 (اختياري)",
+    عدد_الاختيارات="حدد كم لاعب يختاره الكابتن في الدور الواحد (مثال: 2 أو 3 أو 4)"
 )
 async def تقسيم(
     interaction: discord.Interaction, 
@@ -228,7 +229,10 @@ async def تقسيم(
     كابتن_3: discord.Member = None,
     كابتن_4: discord.Member = None,
     كابتن_5: discord.Member = None,
-    كابتن_6: discord.Member = None
+    كابتن_6: discord.Member = None,
+    كابتن_7: discord.Member = None,
+    كابتن_8: discord.Member = None,
+    عدد_الاختيارات: int = 2
 ):
     if not any(r.id == ROLE_MANAGER_ID for r in interaction.user.roles):
         await interaction.response.send_message("❌ عذراً، هذا الأمر مخصص فقط لمن يحمل رتبة المسؤول عن التقسيمة!", ephemeral=True)
@@ -238,8 +242,12 @@ async def تقسيم(
         await interaction.response.send_message(f"❌ هذا الأمر يعمل فقط داخل شات البوت المخصص: <#{TEXT_CHANNEL_ID}>", ephemeral=True)
         return
 
-    if عدد_الفرق not in [2, 4, 6]:
-        await interaction.response.send_message("❌ الرجاء اختيار عدد فرق صحيح (2 أو 4 أو 6 فقط).", ephemeral=True)
+    if عدد_الفرق not in [2, 4, 6, 8]:
+        await interaction.response.send_message("❌ الرجاء اختيار عدد فرق صحيح (2 أو 4 أو 6 أو 8 فقط).", ephemeral=True)
+        return
+
+    if عدد_الاختيارات < 1 or عدد_الاختيارات > 23:
+        await interaction.response.send_message("❌ الرجاء إدخال عدد اختيارات منطقي في الدور الواحد (بين 1 و 23).", ephemeral=True)
         return
 
     lobby_channel = interaction.guild.get_channel(LOBBY_VOICE_ID)
@@ -247,7 +255,7 @@ async def تقسيم(
         await interaction.response.send_message("❌ روم التقسيمة الصوتي فارغ حالياً! يجب دخول اللاعبين أولاً.", ephemeral=True)
         return
 
-    all_caps = [كابتن_1, كابتن_2, كابتن_3, كابتن_4, كابتن_5, كابتن_6]
+    all_caps = [كابتن_1, كابتن_2, كابتن_3, كابتن_4, كابتن_5, كابتن_6, كابتن_7, كابتن_8]
     chosen_caps = [c.id for c in all_caps[:عدد_الفرق] if c is not None]
 
     if len(chosen_caps) != عدد_الفرق:
@@ -258,13 +266,13 @@ async def تقسيم(
     session["captains"] = chosen_caps
     session["current_index"] = 0
     session["round"] = 1
-    session["picks_allowed"] = 2
+    session["picks_allowed"] = عدد_الاختيارات 
 
-    await interaction.response.send_message(f" **بدأ نظام التقسيم التلقائي بنجاح لـ {عدد_الفرق} فرق!**")
+    await interaction.response.send_message(f" **بدأ نظام التقسيم لـ {عدد_الفرق} فرق، بحصة اختيار تبلغ {عدد_الاختيارات} لاعبين في الدور الواحد!**")
     
     await send_next_turn(interaction.channel, interaction.guild)
 
-# --- أمر تعديل الاختيارات/المراكز المحدث والمضمون للظهور فوراً ---
+# --- أمر تعديل الاختيارات الاحتياطي ---
 @bot.tree.command(name="تعديل_الاختيارات", description="تعديل عدد اللاعبين المتاح اختيارهم للكباتن في الدور الحالي والأدوار القادمة")
 @app_commands.describe(العدد="أدخل عدد الاختيارات المطلوب للتحكم بالعدد والمراكز (مثال: 3 أو 2)")
 @app_commands.default_permissions(use_application_commands=True)
@@ -280,12 +288,12 @@ async def تعديل_الاختيارات(interaction: discord.Interaction, ال
     session["picks_allowed"] = العدد
     await interaction.response.send_message(f"⚙️ **تحديث الإعدادات:** تم تعديل حصة الاختيار والمراكز بنجاح! الدور القادم وكل الأدوار القادمة ستسمح للكباتن باختيار **{العدد} لاعبين** دفعة واحدة.")
 
-# --- أمر التحديث الإجباري العادي بالشات ---
+# --- أمر التحديث الإجباري العادي بالشات لتهيئة الرومات والأمر الجديد ---
 @bot.command(name="sync")
 @commands.has_permissions(administrator=True)
 async def sync(ctx):
     await bot.tree.sync()
-    await ctx.send("🔄 تم إجبار ديسكورد على تحديث ومزامنة جميع الأوامر المائلة المضافة حديثاً بما فيها تعديل الاختيارات!")
+    await ctx.send("🔄 تم تحديث ومزامنة الأوامر لتدعم الـ 8 فرق بالكامل والآيديات الجديدة!")
 
 # تشغيل البوت
 token = os.getenv("DISCORD_TOKEN")
