@@ -103,7 +103,6 @@ class SetupMenu(discord.ui.Select):
                 session["current_index"] = 0
                 session["round"] = 1
                 
-                # تعديث الرسالة للخطوة الأخيرة لحل مشكلة التعليق تماماً
                 await interaction.response.edit_message(content="تم حفظ جميع الاختيارات وتبدأ التقسيمة الان", view=None)
                 await send_next_turn(interaction.channel, guild)
 
@@ -217,7 +216,9 @@ def get_current_max_picks(captain_id):
 
 async def send_next_turn(channel, guild):
     options, actual_available = make_options(guild)
-    if not actual_available:
+    
+    # إذا لم يتبق أي لاعبين في الروم الصوتي، تنتهي التقسيمة تماماً
+    if session["round"] > 1 and not actual_available:
         embed = discord.Embed(
             title="تم توزيع جميع اللاعبين بنجاح",
             description="انتهت عملية التقسيمة بالكامل يتوجب على المسؤول الضغط على الزر بالاسفل لتصفير البوت",
@@ -228,6 +229,8 @@ async def send_next_turn(channel, guild):
 
     cap_id = session["captains"][session["current_index"]]
     captain_member = guild.get_member(cap_id)
+    
+    # في حال لم يجد العضو، يتخطاه للكابتن التالي تلقائياً
     if not captain_member:
         session["current_index"] += 1
         if session["current_index"] >= len(session["captains"]):
@@ -267,11 +270,6 @@ async def تقسيم(
 
     if عدد_الفرق not in [2, 4, 6, 8]:
         await interaction.response.send_message("الرجاء اختيار عدد فرق صحيح (2 أو 4 أو 6 أو 8 فقط)", ephemeral=True)
-        return
-
-    lobby_channel = interaction.guild.get_channel(LOBBY_VOICE_ID)
-    if not lobby_channel or not lobby_channel.members:
-        await interaction.response.send_message("روم التقسيمة الصوتي فارغ حاليا يجب دخول اللاعبين أولا", ephemeral=True)
         return
 
     all_caps = [كابتن_1, كابتن_2, كابتن_3, كابتن_4, كابتن_5, كابتن_6, كابتن_7, كابتن_8]
