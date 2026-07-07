@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import os
 
-ROLE_MANAGER_ID = 1475334752436359320       
+ROLE_MANAGER_ID = 1360011347768774796       
 ROLE_HEZAM_ID = 1490247564086214787         
 ROLE_CAPITANO_ID = 1495426762971283528      
 
