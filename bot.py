@@ -3,22 +3,22 @@ from discord.ext import commands
 from discord import app_commands
 import os
 
-ROLE_MANAGER_ID = 1360011347768774796       
-ROLE_HEZAM_ID = 1496134224795799592         
-ROLE_CAPITANO_ID = 1487063117375602819      
+ROLE_MANAGER_ID = 1475334752436359320       
+ROLE_HEZAM_ID = 1490247564086214787         
+ROLE_CAPITANO_ID = 1495426762971283528      
 
-TEXT_CHANNEL_ID = 1523913284351426742       
-LOBBY_VOICE_ID = 1359226687216418856        
+TEXT_CHANNEL_ID = 1483219896069525665       
+LOBBY_VOICE_ID = 1475334190034587661        
 
 TEAM_CHANNELS = [
-    1359280052109443173, 
-    1359280380599079022, 
-    1359280446952833095, 
-    1359280489923477754, 
-    1359280772707651684, 
-    1359280733650288723, 
-    1494687589616320654, 
-    1494687636273762546   
+    1483219750027919422, 
+    1513180587584782446, 
+    1514791919623077938, 
+    1514791956763512874, 
+    1523555136050303017, 
+    1523555190102556703, 
+    1523555255751545032, 
+    1523555313515761744   
 ]
 
 intents = discord.Intents.default()
@@ -80,19 +80,33 @@ class SetupMenu(discord.ui.Select):
         if session["setup_round"] == 1:
             session["custom_picks_r1"][cap_id] = val
             session["setup_round"] = 2
-            await interaction.response.defer()
-            await ask_next_setup(interaction.message)
+            
+            # تحديث محتوى القائمة للفة الثانية مباشرة لمنع التعليق
+            guild = interaction.guild
+            next_cap_id = session["captains"][session["setup_index"]]
+            captain_member = guild.get_member(next_cap_id)
+            name = captain_member.display_name if captain_member else f"الكابتن {session['setup_index'] + 1}"
+            content = f"حدد عدد اختيارات {name} في اللفة الثانية:"
+            await interaction.response.edit_message(content=content, view=SetupView())
         else:
             session["custom_picks_r2"][cap_id] = val
             session["setup_index"] += 1
             session["setup_round"] = 1
-            await interaction.response.defer()
+            
             if session["setup_index"] < len(session["captains"]):
-                await ask_next_setup(interaction.message)
+                guild = interaction.guild
+                next_cap_id = session["captains"][session["setup_index"]]
+                captain_member = guild.get_member(next_cap_id)
+                name = captain_member.display_name if captain_member else f"الكابتن {session['setup_index'] + 1}"
+                content = f"حدد عدد اختيارات {name} في اللفة الاولى:"
+                await interaction.response.edit_message(content=content, view=SetupView())
             else:
                 session["active"] = True
                 session["current_index"] = 0
                 session["round"] = 1
+                
+                # حذف رسالة التجهيز وبدء التقسيمة
+                await interaction.response.defer()
                 try:
                     await interaction.message.delete()
                 except:
@@ -104,15 +118,6 @@ class SetupView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(SetupMenu())
-
-async def ask_next_setup(message):
-    guild = message.guild
-    cap_id = session["captains"][session["setup_index"]]
-    captain_member = guild.get_member(cap_id)
-    name = captain_member.display_name if captain_member else f"الكابتن {session['setup_index'] + 1}"
-    rnd = "الاولى" if session["setup_round"] == 1 else "الثانية"
-    content = f"حدد عدد اختيارات {name} في اللفة {rnd}:"
-    await message.edit(content=content, view=SetupView())
 
 class DraftMenu(discord.ui.Select):
     def __init__(self, guild, max_picks=2, page=0):
@@ -291,9 +296,10 @@ async def تقسيم(
     session["setup_index"] = 0
     session["setup_round"] = 1
 
-    await interaction.response.send_message("بدء إعداد حصص اللفات للكباتن")
-    msg = await interaction.original_response()
-    await ask_next_setup(msg)
+    captain_member = interaction.guild.get_member(chosen_caps[0])
+    name = captain_member.display_name if captain_member else "الكابتن 1"
+    
+    await interaction.response.send_message(f"حدد عدد اختيارات {name} في اللفة الاولى:", view=SetupView())
 
 @bot.command(name="sync")
 @commands.has_permissions(administrator=True)
