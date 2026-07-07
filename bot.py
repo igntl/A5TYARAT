@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import os
 
+# --- الآيديات الصحيحة والمحدثة لسيرفرك ---
 ROLE_MANAGER_ID = 1360011347768774796       
 ROLE_HEZAM_ID = 1496134224795799592         
 ROLE_CAPITANO_ID = 1487063117375602819      
@@ -18,7 +19,7 @@ TEAM_CHANNELS = [
     1359280772707651684, 
     1359280733650288723, 
     1494687589616320654, 
-    1494687636273762546,   
+    1494687636273762546   
 ]
 
 intents = discord.Intents.default()
@@ -76,15 +77,13 @@ class SetupMenu(discord.ui.Select):
         
         val = int(self.values[0])
         cap_id = session["captains"][session["setup_index"]]
+        guild = interaction.guild
         
         if session["setup_round"] == 1:
             session["custom_picks_r1"][cap_id] = val
             session["setup_round"] = 2
             
-            # تحديث محتوى القائمة للفة الثانية مباشرة لمنع التعليق
-            guild = interaction.guild
-            next_cap_id = session["captains"][session["setup_index"]]
-            captain_member = guild.get_member(next_cap_id)
+            captain_member = guild.get_member(cap_id)
             name = captain_member.display_name if captain_member else f"الكابتن {session['setup_index'] + 1}"
             content = f"حدد عدد اختيارات {name} في اللفة الثانية:"
             await interaction.response.edit_message(content=content, view=SetupView())
@@ -94,7 +93,6 @@ class SetupMenu(discord.ui.Select):
             session["setup_round"] = 1
             
             if session["setup_index"] < len(session["captains"]):
-                guild = interaction.guild
                 next_cap_id = session["captains"][session["setup_index"]]
                 captain_member = guild.get_member(next_cap_id)
                 name = captain_member.display_name if captain_member else f"الكابتن {session['setup_index'] + 1}"
@@ -105,14 +103,9 @@ class SetupMenu(discord.ui.Select):
                 session["current_index"] = 0
                 session["round"] = 1
                 
-                # حذف رسالة التجهيز وبدء التقسيمة
-                await interaction.response.defer()
-                try:
-                    await interaction.message.delete()
-                except:
-                    pass
-                await interaction.channel.send("تم حفظ جميع الاختيارات وتبدأ التقسيمة الان")
-                await send_next_turn(interaction.channel, interaction.guild)
+                # تعديث الرسالة للخطوة الأخيرة لحل مشكلة التعليق تماماً
+                await interaction.response.edit_message(content="تم حفظ جميع الاختيارات وتبدأ التقسيمة الان", view=None)
+                await send_next_turn(interaction.channel, guild)
 
 class SetupView(discord.ui.View):
     def __init__(self):
