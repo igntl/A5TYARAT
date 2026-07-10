@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord import app_commands
 import os
 
-# --- الآيديات الصحيحة والمحدثة لسيرفرك ---
 ROLE_MANAGER_ID = 1360011347768774796       
 ROLE_HEZAM_ID = 1496134224795799592         
 ROLE_CAPITANO_ID = 1487063117375602819      
@@ -48,22 +47,11 @@ session = {
     "setup_round": 1
 }
 
-def make_options(guild, page=0):
+def get_all_available_members(guild):
     lobby_channel = guild.get_channel(LOBBY_VOICE_ID)
     if not lobby_channel:
-        return [], []
-    valid_members = [m for m in lobby_channel.members if m.id not in session["captains"] and not m.bot]
-    start = page * 23
-    end = start + 23
-    current_list = valid_members[start:end]
-    options = [discord.SelectOption(label=m.display_name, value=str(m.id)) for m in current_list]
-    if page > 0:
-        options.insert(0, discord.SelectOption(label="الصفحة السابقة", value=f"page_prev_{page}"))
-    if end < len(valid_members):
-        options.append(discord.SelectOption(label="الصفحة التالية", value=f"page_next_{page}"))
-    if not options:
-        options.append(discord.SelectOption(label="لا يوجد لاعبين متاحين حاليا بروم التجمع", value="none"))
-    return options, valid_members
+        return []
+    return [m for m in lobby_channel.members if m.id not in session["captains"] and not m.bot]
 
 class SetupMenu(discord.ui.Select):
     def __init__(self):
@@ -111,18 +99,15 @@ class SetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(SetupMenu())
 
-class DraftMenu(discord.ui.Select):
-    def __init__(self, guild, max_picks=2, page=0):
-        self.guild = guild
-        self.page = page
-        self.max_picks = max_picks
-        options, _ = make_options(guild, page)
+class MultiDraftMenu(discord.ui.Select):
+    def __init__(self, placeholder, options, max_picks):
         super().__init__(
-            placeholder="اختار من القائمة...",
+            placeholder=placeholder,
             min_values=1,
             max_values=min(max_picks, len(options)),
             options=options
         )
+        self.max_picks = max_picks
 
     async def callback(self, interaction: discord.Interaction):
         if not session["active"]:
@@ -133,29 +118,13 @@ class DraftMenu(discord.ui.Select):
             await interaction.response.send_message("ليس دورك في الاختيار الان انتظر منشن البوت", ephemeral=True)
             return
 
-        selection = self.values[0]
-        if selection.startswith("page_next_"):
-            p = int(selection.split("_")[2])
-            await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, p + 1))
-            return
-        elif selection.startswith("page_prev_"):
-            p = int(selection.split("_")[2])
-            await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, p - 1))
-            return
-        elif selection == "none":
-            await interaction.response.edit_message(view=DraftView(interaction.guild, self.max_picks, self.page))
-            return
-
-        selected_members = [int(v) for v in self.values if not v.startswith("page_")]
+        selected_members = [int(v) for v in self.values]
         lobby_channel = interaction.guild.get_channel(LOBBY_VOICE_ID)
         current_lobby_ids = [m.id for m in lobby_channel.members] if lobby_channel else []
 
         missing_players = [p_id for p_id in selected_members if p_id not in current_lobby_ids]
         if missing_players:
-            await interaction.response.edit_message(
-                content=f"{interaction.user.mention} خرج بعض اللاعبين تم تحديث القائمة يرجى اعادة الاختيار",
-                view=DraftView(interaction.guild, self.max_picks, self.page)
-            )
+            await interaction.response.send_message("خرج بعض اللاعبين الذين اخترتهم من الروم الصوتي، يرجى إعادة المحاولة من القائمة المحدثة.", ephemeral=True)
             return
 
         await interaction.response.defer()
@@ -181,10 +150,20 @@ class DraftMenu(discord.ui.Select):
             pass
         await send_next_turn(interaction.channel, interaction.guild)
 
-class DraftView(discord.ui.View):
-    def __init__(self, guild, max_picks=2, page=0):
+class MultiDraftView(discord.ui.View):
+    def __init__(self, available_members, max_picks):
         super().__init__(timeout=None)
-        self.add_item(DraftMenu(guild, max_picks, page))
+        
+        # تقسيم اللاعبين المتاحين إلى مجموعات، كل مجموعة بحد أقصى 25 اسم
+        chunk_size = 25
+        chunks = [available_members[i:i + chunk_size] for i in range(0, len(available_members), chunk_size)]
+        
+        for index, chunk in enumerate(chunks):
+            options = [discord.SelectOption(label=m.display_name, value=str(m.id)) for m in chunk]
+            start_num = (index * chunk_size) + 1
+            end_num = start_num + len(chunk) - 1
+            placeholder = f"قائمة اللاعبين من {start_num} إلى {end_num}"
+            self.add_item(MultiDraftMenu(placeholder, options, max_picks))
 
 class ResetButton(discord.ui.Button):
     def __init__(self):
@@ -215,9 +194,8 @@ def get_current_max_picks(captain_id):
         return 2
 
 async def send_next_turn(channel, guild):
-    options, actual_available = make_options(guild)
+    actual_available = get_all_available_members(guild)
     
-    # إذا لم يتبق أي لاعبين في الروم الصوتي، تنتهي التقسيمة تماماً
     if session["round"] > 1 and not actual_available:
         embed = discord.Embed(
             title="تم توزيع جميع اللاعبين بنجاح",
@@ -230,7 +208,6 @@ async def send_next_turn(channel, guild):
     cap_id = session["captains"][session["current_index"]]
     captain_member = guild.get_member(cap_id)
     
-    # في حال لم يجد العضو، يتخطاه للكابتن التالي تلقائياً
     if not captain_member:
         session["current_index"] += 1
         if session["current_index"] >= len(session["captains"]):
@@ -242,10 +219,19 @@ async def send_next_turn(channel, guild):
     picks_allowed = get_current_max_picks(cap_id)
     embed = discord.Embed(
         title=f"جولة الاختيار رقم {session['round']}",
-        description=f"الدور الان عندك يا كابتن: {captain_member.mention}\nالرجاء اختيار لاعبيك من القائمة بالاسفل\n\nاختياراتك المتاحة في هذا الدور: {picks_allowed} لاعبين دفعة واحدة",
+        description=f"الدور الان عندك يا كابتن: {captain_member.mention}\nالرجاء اختيار لاعبيك من القوائم بالاسفل\n\nاختياراتك المتاحة في هذا الدور: {picks_allowed} لاعبين دفعة واحدة",
         color=discord.Color.blue()
     )
-    await channel.send(content=captain_member.mention, embed=embed, view=DraftView(guild, picks_allowed))
+    
+    # إرسال الرسالة مع دعم القوائم المتعددة التلقائية بناءً على عدد الحضور
+    if not actual_available:
+        # قائمة وهمية فارغة في حال عدم وجود أحد لمنع الكراش عند البدء المفاجئ
+        options = [discord.SelectOption(label="لا يوجد لاعبين متاحين حاليا بروم التجمع", value="none")]
+        view = discord.ui.View()
+        view.add_item(discord.ui.Select(placeholder="القائمة فارغة...", options=options, disabled=True))
+        await channel.send(content=captain_member.mention, embed=embed, view=view)
+    else:
+        await channel.send(content=captain_member.mention, embed=embed, view=MultiDraftView(actual_available, picks_allowed))
 
 @bot.tree.command(name="تقسيم", description="بدء التقسيم وتحديد اختيارات كل كابتن")
 @app_commands.describe(
